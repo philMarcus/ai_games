@@ -1,0 +1,38 @@
+# Example competitor roster. Each entry is one ENTRANT, keyed by a unique label
+# that shows up in standings and transcripts. The same model at different
+# settings is a different competitor — "gemma-fast" (thinking off) and
+# "gemma-slow" (thinking high) can play each other.
+#
+#   model:        an installed Ollama model tag
+#   think:        off | on | low | medium | high   (low/med/high = reasoning effort)
+#   temperature:  sampling temperature (default 0.7)
+#
+# Use:
+#   py play.py chess --roster rosters/example.yaml --white gemma-fast --black gpt-low
+#   py play.py chess --roster rosters/example.yaml --tournament bench --rounds 2
+
+competitors:
+  gemma-fast:
+    model: gemma4:26b
+    think: off
+    temperature: 0.3
+
+  gemma-slow:
+    model: gemma4:26b
+    think: high
+    temperature: 0.3
+
+  gpt-low:
+    model: gpt-oss:20b
+    think: low
+    temperature: 0.6
+
+  qwen-think:
+    model: qwen3:14b
+    think: on
+    temperature: 0.7
+
+  mistral:
+    model: mistral-small3.2:24b
+    think: off
+    temperature: 0.3
