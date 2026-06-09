@@ -46,9 +46,13 @@ SYSTEM = (
 )
 
 CHAT_SYSTEM_EXTRA = (
-    "\nBefore each round's decisions, you and your opponent exchange one message "
-    "each. Messages are visible to the opponent and are non-binding talk — you "
-    "may promise, threaten, persuade, or deceive."
+    "\nEach round has TWO separate steps:\n"
+    "1. MESSAGE step — you and your opponent exchange one message each. Messages "
+    "are visible to the opponent and are non-binding talk: you may promise, "
+    "threaten, persuade, or deceive. You do NOT make your decision in this step.\n"
+    "2. DECISION step — afterwards, in a separate turn, you secretly commit "
+    "cooperate or defect. Only this step scores points.\n"
+    "You will be told which step you are in; reply with only what that step asks for."
 )
 
 
@@ -124,10 +128,14 @@ class IPDGame(Game):
                 for who, text in state["messages"])
             parts.append(f"\nThis round's discussion so far:\n{talk}")
         if state["phase"] == "chat":
-            parts.append("\nWrite your message to your opponent for this round as JSON.")
+            parts.append("\nThis is the MESSAGE step. Write your message to your "
+                         "opponent for this round as JSON. Do NOT decide yet — you "
+                         "will secretly commit cooperate/defect in a separate step "
+                         "after the messages; nothing you say here is binding.")
         else:
-            parts.append("\nCommit your SECRET decision for this round now as JSON: "
-                         '"action" must be "cooperate" or "defect".')
+            parts.append("\nThis is the DECISION step. The messages (if any) are "
+                         "done. Commit your SECRET decision for this round now as "
+                         'JSON: "action" must be "cooperate" or "defect".')
         return "\n".join(parts)
 
     def action_schema(self, state, role):
