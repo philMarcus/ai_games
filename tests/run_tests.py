@@ -85,7 +85,10 @@ def test_ambiguous_san():
     shutil.rmtree(tmp)
     assert got[0] == "ok", got
     retry_user = client.calls[1]["messages"][1]["content"]
-    assert "AMBIGUOUS" in retry_user and '"Nac2"' in retry_user
+    assert "AMBIGUOUS" in retry_user and "knights" in retry_user and "c2" in retry_user
+    # candidates are deliberately withheld — the model must disambiguate itself
+    assert "Nac2" not in retry_user and "Nec2" not in retry_user
+    assert "FEEDBACK ON YOUR PREVIOUS REPLY" in retry_user
 
 
 def test_board_letters_and_history():

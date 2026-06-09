@@ -276,9 +276,15 @@ class ChessGame(Game):
         board = state["board"]
         move, ambiguous = parse_move(board, action.get("move", ""))
         if move is None and ambiguous:
-            opts = " or ".join(f'"{c}"' for c in ambiguous)
-            return "illegal", (f"AMBIGUOUS — more than one of your pieces can make "
-                               f"that move; specify which, e.g. {opts}")
+            # Name the piece and square but NOT the candidate notations — the
+            # model must disambiguate its own intent, not pick from a list.
+            mv0 = board.parse_san(ambiguous[0])
+            piece_name = chess.piece_name(board.piece_type_at(mv0.from_square))
+            to_sq = chess.square_name(mv0.to_square)
+            return "illegal", (f"AMBIGUOUS — more than one of your {piece_name}s "
+                               f"can reach {to_sq}, so SAN requires you to say "
+                               "which one; the move itself may be fine once "
+                               "disambiguated")
         if move is None:
             return "illegal", (f'"{action.get("move", "")}" is not a legal move '
                                "in this position")

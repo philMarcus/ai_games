@@ -84,7 +84,9 @@ def take_turn(client, game, state, role, comp, opts, events):
             break
         obs = game.observation(state, role)
         if feedback:
-            obs = f"{feedback}\n\n{obs}"
+            obs = ("FEEDBACK ON YOUR PREVIOUS REPLY (this same turn — it was "
+                   f"rejected; the state shown below is unchanged):\n{feedback}"
+                   f"\n\n{obs}")
         think_open[0] = False
         t0 = time.time()
         raw, think_chars, timed_out = client.chat(
