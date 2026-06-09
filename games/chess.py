@@ -45,7 +45,9 @@ SYSTEM_TMPL = (
     'object of the form {{"move": "<SAN>", "comment": "<text>"}}.\n'
     "- \"move\" must be a single legal move in Standard Algebraic Notation "
     "(e.g. e4, Nf3, O-O, exd5, e8=Q, Qxf7#). It must be legal in the position "
-    "shown — an illegal or impossible move forfeits the entire game.\n"
+    "shown — an illegal or impossible move forfeits the entire game. If two of "
+    "your pieces of the same type can reach the square, disambiguate as SAN "
+    "requires (e.g. Ngf6, Rad1).\n"
     "- \"comment\" is one or two sentences on your plan. It is PRIVATE: your "
     "opponent never sees it, so be candid.\n"
     "Do not resign and do not offer draws — just play your best legal move.\n"
@@ -126,23 +128,42 @@ def normalize_move_str(s):
     return s
 
 
+AMBIG_SAN_RE = re.compile(r"^([NBRQK])[a-h]?[1-8]?x?([a-h][1-8])")
+
+
+def ambiguous_candidates(board, s):
+    """Disambiguated SANs of all legal moves matching an ambiguous SAN string
+    (same piece type, same destination), e.g. 'Nf6' -> ['Ndf6', 'Ngf6']."""
+    m = AMBIG_SAN_RE.match(s)
+    if not m:
+        return []
+    piece = chess.Piece.from_symbol(m.group(1)).piece_type
+    to_sq = chess.parse_square(m.group(2))
+    return sorted(board.san(mv) for mv in board.legal_moves
+                  if mv.to_square == to_sq
+                  and board.piece_type_at(mv.from_square) == piece)
+
+
 def parse_move(board, raw):
-    """Parse a model's move string (SAN preferred, UCI fallback). Returns a
-    legal chess.Move or None."""
+    """Parse a model's move string (SAN preferred, UCI fallback). Returns
+    (move, None) on success, (None, candidate_sans) when the SAN was legal but
+    ambiguous, or (None, None) when illegal/unparseable."""
     s = normalize_move_str(str(raw))
     if not s:
-        return None
+        return None, None
     try:
-        return board.parse_san(s)
+        return board.parse_san(s), None
+    except chess.AmbiguousMoveError:
+        return None, ambiguous_candidates(board, s)
     except Exception:
         pass
     try:
         mv = board.parse_uci(s.lower())
         if mv in board.legal_moves:
-            return mv
+            return mv, None
     except Exception:
         pass
-    return None
+    return None, None
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -245,7 +266,7 @@ class ChessGame(Game):
         parts.append("\nGive your move now as JSON.")
         return "\n".join(parts)
 
-    def action_schema(self, role):
+    def action_schema(self, state, role):
         return MOVE_SCHEMA
 
     def action_summary(self, action):
@@ -253,7 +274,11 @@ class ChessGame(Game):
 
     def apply(self, state, role, action):
         board = state["board"]
-        move = parse_move(board, action.get("move", ""))
+        move, ambiguous = parse_move(board, action.get("move", ""))
+        if move is None and ambiguous:
+            opts = " or ".join(f'"{c}"' for c in ambiguous)
+            return "illegal", (f"AMBIGUOUS — more than one of your pieces can make "
+                               f"that move; specify which, e.g. {opts}")
         if move is None:
             return "illegal", (f'"{action.get("move", "")}" is not a legal move '
                                "in this position")

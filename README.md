@@ -10,8 +10,20 @@ rosters, structured-output moves with private commentary, illegal-action retries
 forfeit, a per-move clock, resumable round-robin tournaments, records-by-default)
 plus a small Game interface that each game plugs into. See `PLAN.md` for the design.
 
-**Games:** chess (ported from [ai_chess](https://github.com/philMarcus/ai_chess)).
-Planned: Go 9×9, Codenames, iterated prisoner's dilemma, 20 Questions, who's-on-first.
+**Games:**
+
+- **chess** — planning, board state-tracking, rule-following (ported from
+  [ai_chess](https://github.com/philMarcus/ai_chess); SAN with disambiguation,
+  PGN export, optional Stockfish ACPL).
+- **ipd** — iterated prisoner's dilemma, Axelrod-style: standings rank by
+  accumulated points. `--chat` adds a pre-round message exchange, so you can
+  watch models promise, persuade, and betray. The round count is hidden from
+  the players (a known horizon unravels into defect-always).
+- **20q** — Twenty Questions: the answerer proposes candidate secrets and the
+  harness dice pick one (committed up front so it can't drift; recent secrets
+  are excluded for variety), then the asker deduces it in `--questions` tries.
+
+Planned: Go 9×9, Codenames, who's-on-first.
 
 ## Requirements
 
@@ -36,6 +48,10 @@ py play.py chess --tournament bench --models qwen3:14b,phi4,gemma3:12b --rounds 
 
 # per-competitor settings via a roster
 py play.py chess --roster rosters/example.yaml --white gemma-fast --black gemma-slow
+
+# prisoner's dilemma with negotiation; 20 Questions
+py play.py ipd --p1 gemma4:26b --p2 gpt-oss:20b --chat --no-think
+py play.py 20q --answerer gemma4:26b --asker qwen3:14b --no-think
 ```
 
 `py play.py --help` lists games; `py play.py <game> --help` lists that game's flags.
@@ -85,6 +101,8 @@ records. Nothing is ephemeral.
 
 Chess extras: `--board-input` (adds a redundant ASCII letter-grid board to the prompt),
 `--eval` / `--engine PATH` (Stockfish average-centipawn-loss scoring).
+IPD extras: `--chat`, `--ipd-rounds N` (hidden from the players).
+20q extras: `--questions N` (asker's budget, default 20).
 
 ## Tests
 

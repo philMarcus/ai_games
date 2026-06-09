@@ -19,10 +19,16 @@ def get_game(name):
     if name in ("chess",):
         from games.chess import ChessGame
         return ChessGame
+    if name in ("ipd", "dilemma"):
+        from games.ipd import IPDGame
+        return IPDGame
+    if name in ("20q", "twentyq", "twenty-questions"):
+        from games.twenty_questions import TwentyQuestionsGame
+        return TwentyQuestionsGame
     return None
 
 
-GAME_NAMES = ["chess"]
+GAME_NAMES = ["chess", "ipd", "20q"]
 
 
 def build_parser(game_cls):

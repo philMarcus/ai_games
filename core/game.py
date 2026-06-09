@@ -41,8 +41,9 @@ class Game:
         """The prompt text this role sees — respecting hidden information."""
         raise NotImplementedError
 
-    def action_schema(self, role):
-        """JSON schema for this role's action (Ollama structured output)."""
+    def action_schema(self, state, role):
+        """JSON schema for this role's action (Ollama structured output).
+        May depend on state (e.g. a chat phase vs a decision phase)."""
         raise NotImplementedError
 
     def action_summary(self, action):

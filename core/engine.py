@@ -91,7 +91,7 @@ def take_turn(client, game, state, role, comp, opts, events):
             comp.model,
             [{"role": "system", "content": system},
              {"role": "user", "content": obs}],
-            schema=game.action_schema(role), temperature=comp.temperature,
+            schema=game.action_schema(state, role), temperature=comp.temperature,
             num_predict=opts["num_predict"], think=comp.think,
             think_effort=comp.effort, deadline=deadline, on_think=on_think)
         elapsed = time.time() - t0

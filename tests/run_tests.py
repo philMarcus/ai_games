@@ -58,13 +58,34 @@ def move_json(m, c="test comment"):
 
 def test_parse_move():
     b = pychess.Board()
-    assert parse_move(b, "e4") == pychess.Move.from_uci("e2e4")
-    assert parse_move(b, "1. Nf3") == pychess.Move.from_uci("g1f3")
-    assert parse_move(b, "e2e4") == pychess.Move.from_uci("e2e4")
-    assert parse_move(b, "O-O") is None
-    assert parse_move(b, "garbage") is None
+    assert parse_move(b, "e4") == (pychess.Move.from_uci("e2e4"), None)
+    assert parse_move(b, "1. Nf3") == (pychess.Move.from_uci("g1f3"), None)
+    assert parse_move(b, "e2e4") == (pychess.Move.from_uci("e2e4"), None)
+    assert parse_move(b, "O-O") == (None, None)
+    assert parse_move(b, "garbage") == (None, None)
     b2 = pychess.Board("r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 0 1")
-    assert parse_move(b2, "0-0") == pychess.Move.from_uci("e1g1")
+    assert parse_move(b2, "0-0") == (pychess.Move.from_uci("e1g1"), None)
+
+
+def test_ambiguous_san():
+    # knights on a1 and e1 can both reach c2: "Nc2" is ambiguous
+    b = pychess.Board("k7/8/8/8/8/8/8/N3N2K w - - 0 1")
+    mv, ambiguous = parse_move(b, "Nc2")
+    assert mv is None and ambiguous == ["Nac2", "Nec2"], (mv, ambiguous)
+    # the disambiguated form parses fine
+    assert parse_move(b, "Nac2")[0] == pychess.Move.from_uci("a1c2")
+    # through the engine: ambiguous → feedback with candidates → success
+    game = ChessGame()
+    state = game.initial_state()
+    state["board"] = b
+    client = MockClient(script=[move_json("Nc2"), move_json("Nac2")])
+    events = []
+    tmp = tempfile.mkdtemp()
+    got = engine.take_turn(client, game, state, "white", mk(), opts(tmp), events)
+    shutil.rmtree(tmp)
+    assert got[0] == "ok", got
+    retry_user = client.calls[1]["messages"][1]["content"]
+    assert "AMBIGUOUS" in retry_user and '"Nac2"' in retry_user
 
 
 def test_board_letters_and_history():
@@ -195,6 +216,111 @@ def test_tournament_and_resume():
         raise AssertionError("resume should not play any games")
     engine.run_tournament(MockClient(responder=boom), game, comps,
                           "ttest", 2, tdir, o)
+    shutil.rmtree(tmp)
+
+
+# ── IPD ───────────────────────────────────────────────────────────────────
+
+def ipd_game(chat=False, rounds=2):
+    from games.ipd import IPDGame
+    g = IPDGame()
+    g.chat = chat
+    g.total_rounds = rounds
+    return g
+
+
+def test_ipd_pure():
+    g = ipd_game(rounds=2)
+    seq = [json.dumps({"action": a, "comment": "c"})
+           for a in ("cooperate", "defect", "cooperate", "cooperate")]
+    client = MockClient(script=seq)
+    tmp = tempfile.mkdtemp()
+    outcome = engine.play_game(client, g, {"p1": mk("a"), "p2": mk("b")}, opts(tmp))
+    # R1: C vs D -> 0/5; R2: C vs C -> 3/3  => a=3, b=8
+    assert outcome["scores"] == {"p1": 3, "p2": 8}, outcome["scores"]
+    assert outcome["winner"] == "b"
+    assert outcome["cooperation_rate"] == {"p1": 1.0, "p2": 0.5}
+    assert os.path.exists(os.path.join(outcome["run_dir"], "match.txt"))
+    # observations never reveal the opponent's pending same-round choice
+    p2_first_obs = client.calls[1]["messages"][1]["content"]
+    assert "cooperate" not in p2_first_obs.split("History:")[1].split("Commit")[0]
+    shutil.rmtree(tmp)
+
+
+def test_ipd_chat():
+    g = ipd_game(chat=True, rounds=1)
+    seq = [json.dumps({"message": "let us both cooperate, friend", "comment": "c"}),
+           json.dumps({"message": "agreed, I will cooperate", "comment": "c"}),
+           json.dumps({"action": "defect", "comment": "betrayal"}),
+           json.dumps({"action": "cooperate", "comment": "honest"})]
+    client = MockClient(script=seq)
+    tmp = tempfile.mkdtemp()
+    outcome = engine.play_game(client, g, {"p1": mk("a"), "p2": mk("b")}, opts(tmp))
+    assert outcome["scores"] == {"p1": 5, "p2": 0}
+    # p2 saw p1's message before deciding
+    p2_chat_obs = client.calls[1]["messages"][1]["content"]
+    assert "let us both cooperate" in p2_chat_obs
+    # the betrayal is in the readable export
+    txt = open(os.path.join(outcome["run_dir"], "match.txt"), encoding="utf-8").read()
+    assert "agreed, I will cooperate" in txt and "p1 DEFECT" in txt
+    shutil.rmtree(tmp)
+
+
+# ── 20 Questions ──────────────────────────────────────────────────────────
+
+def tq_game(tmp, limit=20):
+    import random
+    from games.twenty_questions import TwentyQuestionsGame
+    g = TwentyQuestionsGame()
+    g.limit = limit
+    g.rng = random.Random(7)
+    g.recent_path = os.path.join(tmp, "recent.json")
+    return g
+
+
+CANDS = ["penguin", "harmonica", "volcano", "submarine", "espresso",
+         "giraffe", "lighthouse", "tornado"]
+
+
+def test_twentyq_win_by_guess():
+    tmp = tempfile.mkdtemp()
+    g = tq_game(tmp)
+    state = g.initial_state()
+    events = []
+    o = opts(tmp)
+    # answerer commits from candidates (harness RNG picks the secret)
+    client = MockClient(script=[json.dumps({"candidates": CANDS, "comment": "c"})])
+    assert engine.take_turn(client, g, state, "answerer", mk("ans"), o, events)[0] == "ok"
+    secret = state["secret"]
+    assert secret in CANDS
+    assert json.load(open(g.recent_path, encoding="utf-8"))["secrets"] == [secret]
+    # asker asks; answerer answers; asker guesses correctly
+    client = MockClient(script=[
+        json.dumps({"type": "question", "text": "Is it alive?", "comment": "c"})])
+    assert engine.take_turn(client, g, state, "asker", mk("ask"), o, events)[0] == "ok"
+    assert g.current_role(state) == "answerer"
+    client = MockClient(script=[json.dumps({"answer": "no", "comment": "c"})])
+    assert engine.take_turn(client, g, state, "answerer", mk("ans"), o, events)[0] == "ok"
+    client = MockClient(script=[
+        json.dumps({"type": "guess", "text": f"a {secret}", "comment": "c"})])
+    assert engine.take_turn(client, g, state, "asker", mk("ask"), o, events)[0] == "ok"
+    assert g.is_over(state)
+    res = g.result(state)
+    assert res["winner"] == "asker" and res["questions_used"] == 2
+    shutil.rmtree(tmp)
+
+
+def test_twentyq_exhaustion():
+    tmp = tempfile.mkdtemp()
+    g = tq_game(tmp, limit=1)
+    state = g.initial_state()
+    state["secret"] = "penguin"   # skip commit phase
+    events, o = [], opts(tmp)
+    client = MockClient(script=[
+        json.dumps({"type": "guess", "text": "walrus", "comment": "c"})])
+    assert engine.take_turn(client, g, state, "asker", mk("ask"), o, events)[0] == "ok"
+    assert g.is_over(state)
+    assert g.result(state)["winner"] == "answerer"
     shutil.rmtree(tmp)
 
 

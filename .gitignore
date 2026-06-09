@@ -11,6 +11,7 @@ venv/
 # Generated game data
 runs/
 tournaments/
+data/twentyq_recent.json
 
 # Editor / OS cruft
 .vscode/
