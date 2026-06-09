@@ -109,21 +109,24 @@ def take_turn(client, game, state, role, comp, opts, events):
             if timed_out:
                 out_of_time = True
                 break  # out of time mid-generation → time forfeit
+            snippet = " ".join(raw.split())[:160]
             if think_chars and not raw.strip():
+                kind = "think_exhausted"
                 sys.stdout.write(f"{RED}  ! used its entire token budget thinking "
                                  f"({think_chars} chars) and never answered{tail}{RESET}\n")
                 feedback = ("You spent your whole response thinking and never output an "
                             "action. Think briefly, then immediately output ONLY the "
                             "required JSON.")
             else:
-                snippet = " ".join(raw.split())[:160] or "(empty response)"
+                kind = "unparseable"
                 sys.stdout.write(f"{RED}  ! no parseable action in reply (bad JSON)"
                                  f"{tail}{RESET}\n")
-                sys.stdout.write(f"{DIM}    got: {snippet}{RESET}\n")
+                sys.stdout.write(f"{DIM}    got: {snippet or '(empty response)'}{RESET}\n")
                 feedback = ("Your previous reply was not the valid JSON object that was "
                             "asked for. Reply with ONLY that JSON.")
-            events.append({"type": "bad_json", "role": role, "label": comp.label,
-                           "elapsed": round(elapsed, 2)})
+            events.append({"type": "bad_json", "kind": kind, "role": role,
+                           "label": comp.label, "think_chars": think_chars,
+                           "snippet": snippet, "elapsed": round(elapsed, 2)})
             continue
 
         verdict, info = game.apply(state, role, action)

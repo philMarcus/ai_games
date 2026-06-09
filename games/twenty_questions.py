@@ -48,11 +48,13 @@ ANSWER_SCHEMA = {
 
 ANSWERER_SYSTEM = (
     "You are the ANSWERER in a game of 20 Questions against another AI.\n"
-    "First you will propose a list of candidate secrets; one will be chosen at "
-    "random as THE secret. Then the asker tries to identify it with yes/no "
-    "questions. Answer every question truthfully about the secret with "
-    '"yes", "no", or "unsure" (only when genuinely unclear). Never reveal the '
-    "secret itself.\n"
+    "The game has two phases:\n"
+    "1. SETUP (happens once): you propose a list of candidate secrets, and the "
+    "game picks ONE of them at random to be THE secret. You do not pick it — "
+    "the random draw does.\n"
+    "2. ANSWERING: each turn you are shown the chosen secret and the asker's "
+    "latest yes/no question about it. Answer truthfully with \"yes\", \"no\", "
+    'or "unsure" (only when genuinely unclear). Never reveal the secret itself.\n'
     "The \"comment\" field is PRIVATE — the asker never sees it."
 )
 
@@ -152,16 +154,23 @@ class TwentyQuestionsGame(Game):
                     "a varied mix of animals, objects, foods, places, famous people, "
                     "concepts; common enough to be guessable but not trivial. One "
                     f"will be picked at random as the secret.{avoid}\n"
+                    "Your later turns will show you which one was chosen; you will "
+                    "then answer the asker's questions about it.\n"
                     "Reply as JSON with the \"candidates\" list.")
         if role == "answerer":
             kind, text = state["pending_q"]
-            return (f"The secret is: \"{state['secret']}\".\n"
+            return (f"The secret for this game is: \"{state['secret']}\" — chosen "
+                    "at random by the game from the candidate list YOU proposed "
+                    "during setup.\n"
                     f"\nQ&A so far:\n{self._qa_text(state)}\n"
                     f"\nThe asker asks: \"{text}\"\n"
-                    'Answer truthfully as JSON: "answer" must be "yes", "no", or '
-                    '"unsure".')
+                    'Answer truthfully about that secret as JSON: "answer" must be '
+                    '"yes", "no", or "unsure".')
         left = self.limit - state["asked"]
-        return (f"Questions remaining: {left} of {self.limit}.\n"
+        last = ("\nWARNING: this is your LAST question. A yes/no question now "
+                "ends the game and you lose — only a correct guess can win. "
+                "Commit to your best guess.\n" if left == 1 else "")
+        return (f"Questions remaining: {left} of {self.limit}.\n{last}"
                 f"\nQ&A so far:\n{self._qa_text(state)}\n"
                 "\nAsk your next yes/no question, or make a guess if confident "
                 '(a guess costs one question). Reply as JSON: "type" is '
