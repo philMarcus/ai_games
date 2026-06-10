@@ -495,6 +495,74 @@ def test_go_illegal_feedback():
     assert v == "illegal" and "occupied" in reason
 
 
+# ── Telephone ─────────────────────────────────────────────────────────────
+
+def tel_game(steps=3, stop=False):
+    import random
+    from games.telephone import TelephoneGame
+    g = TelephoneGame()
+    g.steps = steps
+    g.stop_on_mutation = stop
+    g.rng = random.Random(3)
+    g.set_chain(["alpha", "beta", "gamma"])
+    return g
+
+
+def test_telephone_chain():
+    g = tel_game(steps=3)
+    seed = "The quick brown fox jumps over the lazy dog."
+    mutant = "The quick brown fox jumped over the lazy dog."
+    client = MockClient(script=[
+        json.dumps({"text": seed}),            # alpha composes
+        json.dumps({"text": seed}),            # beta repeats faithfully
+        json.dumps({"text": mutant}),          # gamma mutates
+        json.dumps({"text": mutant}),          # alpha repeats the MUTATED text
+    ])
+    tmp = tempfile.mkdtemp()
+    comps = {l: mk(l) for l in ("alpha", "beta", "gamma")}
+    outcome = engine.play_game(client, g, comps, opts(tmp))
+    assert outcome["extra"]["mutations"] == 1
+    assert outcome["extra"]["first_mutation_step"] == 2
+    assert outcome["extra"]["per_label"]["beta"]["mutations"] == 0
+    assert outcome["extra"]["per_label"]["gamma"]["mutations"] == 1
+    # alpha's repeat was judged against the MUTATED text (faithful to it)
+    assert outcome["extra"]["per_label"]["alpha"]["mutations"] == 0
+    assert mutant in client.calls[3]["messages"][1]["content"]
+    assert outcome["extra"]["final"] == mutant
+    txt = open(os.path.join(outcome["run_dir"], "telephone.txt"),
+               encoding="utf-8").read()
+    assert "MUTATED" in txt and "unchanged" in txt
+    shutil.rmtree(tmp)
+
+
+def test_telephone_whitespace_not_mutation():
+    g = tel_game(steps=1)
+    client = MockClient(script=[
+        json.dumps({"text": "Hello   world."}),
+        json.dumps({"text": " Hello world.  "}),   # only whitespace differs
+    ])
+    tmp = tempfile.mkdtemp()
+    comps = {l: mk(l) for l in ("alpha", "beta", "gamma")}
+    outcome = engine.play_game(client, g, comps, opts(tmp))
+    assert outcome["extra"]["mutations"] == 0
+    shutil.rmtree(tmp)
+
+
+def test_telephone_stop_on_mutation():
+    g = tel_game(steps=50, stop=True)
+    client = MockClient(script=[
+        json.dumps({"text": "abc def"}),
+        json.dumps({"text": "abc def"}),
+        json.dumps({"text": "abc deg"}),           # mutation → game ends
+    ])
+    tmp = tempfile.mkdtemp()
+    comps = {l: mk(l) for l in ("alpha", "beta", "gamma")}
+    outcome = engine.play_game(client, g, comps, opts(tmp))
+    assert outcome["extra"]["repeats"] == 2
+    assert "first mutation at step 2" in outcome["summary"]
+    shutil.rmtree(tmp)
+
+
 # ── competitor / roster ───────────────────────────────────────────────────
 
 def test_competitor_roundtrip():

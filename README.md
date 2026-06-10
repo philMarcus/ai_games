@@ -29,6 +29,11 @@ plus a small Game interface that each game plugs into. See `PLAN.md` for the des
 - **go** — 9×9 Go, the spatial-reasoning stress test: in-house rules (captures,
   suicide, positional superko), GTP coordinates (no column I), two passes end
   the game, Tromp–Taylor area scoring + `--komi`, SGF export with commentary.
+- **telephone** — the kids' game, played by your whole stable at once: the
+  first model composes a `--length phrase|sentence|paragraph`, then every model
+  in rotation must repeat the previous output EXACTLY for `--steps` turns
+  (default 50). Any change is a mutation that propagates down the chain.
+  Standings rank models by transcription fidelity.
 
 Planned: who's-on-first.
 
@@ -61,6 +66,10 @@ py play.py ipd --p1 gemma4:26b --p2 gpt-oss:20b --chat --no-think
 py play.py 20q --answerer gemma4:26b --asker qwen3:14b --no-think
 py play.py codenames --spymaster gemma4:26b --guesser qwen3:14b --no-think
 py play.py go --black gemma4:26b --white gpt-oss:20b --no-think --move-time 60
+
+# telephone through every installed local model (or pick the chain with --models)
+py play.py telephone --no-think
+py play.py telephone --models gemma4:26b,qwen3:14b,phi4 --length paragraph --steps 30
 ```
 
 `py play.py --help` lists games; `py play.py <game> --help` lists that game's flags.
@@ -114,6 +123,8 @@ IPD extras: `--chat`, `--ipd-rounds N` (hidden from the players).
 20q extras: `--questions N` (asker's budget, default 20).
 Codenames extras: `--turns N` (clue turns to find all 9 targets, default 9).
 Go extras: `--komi F` (White's compensation, default 7.0).
+Telephone extras: `--length phrase|sentence|paragraph`, `--steps N` (default 50),
+`--stop-on-mutation` (end at the first change instead).
 
 ## Tests
 

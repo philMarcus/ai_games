@@ -181,8 +181,8 @@ def play_game(client, game, assignment, opts, header=""):
     print(f"{DIM}{'─' * 60}{RESET}")
     for r in game.roles:
         c = assignment[r]
-        print(f"  {role_color[r]}{BOLD}{r.capitalize()}{RESET}: {c.label} "
-              f"{DIM}[{c.desc()}]{RESET}")
+        who = c.label if r == c.label else f"{r.capitalize()}{RESET}: {c.label}"
+        print(f"  {role_color[r]}{BOLD}{who}{RESET} {DIM}[{c.desc()}]{RESET}")
     first = game.render(state)
     if first:
         print(first)
@@ -192,7 +192,9 @@ def play_game(client, game, assignment, opts, header=""):
     while not game.is_over(state) and turns < max_rounds:
         role = game.current_role(state)
         comp = assignment[role]
-        print(f"\n{BOLD}{role_color[role]}{role.capitalize()} — {comp.label}{RESET}")
+        turn_title = (comp.label if role == comp.label
+                      else f"{role.capitalize()} — {comp.label}")
+        print(f"\n{BOLD}{role_color[role]}{turn_title}{RESET}")
 
         t0 = time.time()
         got = take_turn(client, game, state, role, comp, opts, events)
@@ -283,7 +285,10 @@ def generic_stats(game, labels, events):
 def save_run(game, state, outcome, events, opts):
     """Records by default: every game writes a self-contained record under runs/."""
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    names = "_vs_".join(slug(l) for l in outcome["labels"].values())
+    labels = list(dict.fromkeys(outcome["labels"].values()))
+    names = "_vs_".join(slug(l) for l in labels)
+    if len(names) > 60:   # long chains would blow past Windows path limits
+        names = f"{slug(labels[0])}_and_{len(labels) - 1}_others"
     run_dir = os.path.join(opts["runs_dir"], f"{ts}_{game.name}_{names}")
     n, base = 2, run_dir
     while os.path.exists(run_dir):

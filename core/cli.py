@@ -31,10 +31,13 @@ def get_game(name):
     if name in ("go",):
         from games.go import GoGame
         return GoGame
+    if name in ("telephone",):
+        from games.telephone import TelephoneGame
+        return TelephoneGame
     return None
 
 
-GAME_NAMES = ["chess", "ipd", "20q", "codenames", "go"]
+GAME_NAMES = ["chess", "ipd", "20q", "codenames", "go", "telephone"]
 
 
 def build_parser(game_cls):
@@ -136,30 +139,53 @@ def main(argv=None):
         print(f"  Off-roster defaults: think={think_desc}  temp={args.temperature}")
     print(f"{'=' * 60}{RESET}")
 
+    def build_field():
+        """Competitor set from --models / the roster / all installed local."""
+        if roster:
+            if args.models:
+                sel = [s.strip() for s in args.models.split(",") if s.strip()]
+                missing = [s for s in sel if s not in roster]
+                if missing:
+                    print(f"Roster labels not found: {', '.join(missing)}. "
+                          f"Available: {', '.join(roster)}")
+                    sys.exit(1)
+                return {l: roster[l] for l in sel}
+            return dict(roster)
+        if args.models:
+            names = [resolve_model(m.strip(), True, installed)
+                     for m in args.models.split(",") if m.strip()]
+        else:
+            names = [n for n, _ in installed]
+            if not args.include_cloud:
+                names = [m for m in names if not m.endswith(":cloud")]
+        names = list(dict.fromkeys(names))
+        return {m: Competitor(m, m, gthink, args.think_effort, args.temperature)
+                for m in names}
+
     try:
+        if not game_cls.roles:
+            # Chain game (e.g. telephone): the whole field plays in one game.
+            if args.tournament is not None:
+                print(f"{game.name} runs the whole field in one chain — use "
+                      "--games N for repeated chains, not --tournament.")
+                sys.exit(1)
+            competitors = build_field()
+            if len(competitors) < 2:
+                print("Need at least 2 competitors for a chain game.")
+                sys.exit(1)
+            labels = list(competitors)
+            game.set_chain(labels)
+            print(f"  Chain ({len(labels)}): {' → '.join(labels)}")
+            results = []
+            for gnum in range(1, args.games + 1):
+                header = f"Game {gnum}/{args.games}" if args.games > 1 else ""
+                results.append(engine.play_game(client, game, competitors,
+                                                opts, header=header))
+            if args.games > 1:
+                game.standings(labels, results, title="Overall fidelity")
+            return
         if args.tournament is not None:
-            if roster:
-                if args.models:
-                    sel = [s.strip() for s in args.models.split(",") if s.strip()]
-                    missing = [s for s in sel if s not in roster]
-                    if missing:
-                        print(f"Roster labels not found: {', '.join(missing)}. "
-                              f"Available: {', '.join(roster)}")
-                        sys.exit(1)
-                    competitors = {l: roster[l] for l in sel}
-                else:
-                    competitors = dict(roster)
-            else:
-                if args.models:
-                    names = [resolve_model(m.strip(), True, installed)
-                             for m in args.models.split(",") if m.strip()]
-                else:
-                    names = [n for n, _ in installed]
-                    if not args.include_cloud:
-                        names = [m for m in names if not m.endswith(":cloud")]
-                names = list(dict.fromkeys(names))
-                competitors = {m: Competitor(m, m, gthink, args.think_effort,
-                                             args.temperature) for m in names}
+            competitors = build_field()
             if len(competitors) < 2:
                 print("Need at least 2 competitors for a tournament.")
                 sys.exit(1)
