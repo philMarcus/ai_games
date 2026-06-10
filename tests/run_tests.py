@@ -485,6 +485,23 @@ def test_go_full_game_and_sgf():
     shutil.rmtree(tmp)
 
 
+def test_go_capture_annotations():
+    from games.go import GoGame
+    g = GoGame()
+    state = g.initial_state()
+    b = state["board"]
+    b.play("w", (0, 0))
+    b.play("b", (1, 0))
+    b.play("b", (0, 1))          # captures white's corner stone
+    # history shown to the model marks the capture
+    assert "(captured 1)" in g._history_text(b)
+    # the captured player is explicitly told on their next turn
+    obs = g.observation(state, "white")
+    assert "CAPTURED 1 of your stone(s)" in obs
+    # but a non-capturing position has no note
+    assert "CAPTURED" not in g.observation(g.initial_state(), "black")
+
+
 def test_go_illegal_feedback():
     from games.go import GoGame
     g = GoGame()

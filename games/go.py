@@ -108,7 +108,7 @@ class GoBoard:
         """Apply a move. point=None is a pass. Returns ("ok", captured_count)
         or ("illegal", reason)."""
         if point is None:
-            self.history.append((color, None))
+            self.history.append((color, None, 0))
             self.simple_ko = None
             return "ok", 0
         if point in self.grid:
@@ -143,7 +143,7 @@ class GoBoard:
 
         self.seen.add(key)
         self.captures[color] += len(captured)
-        self.history.append((color, point))
+        self.history.append((color, point, len(captured)))
         # Simple-ko hint: single-stone capture by a now-single-stone group whose
         # only liberty is the captured point.
         self.simple_ko = None
@@ -229,9 +229,10 @@ class GoGame(Game):
         if not board.history:
             return "(none yet — this is the first move)"
         parts = []
-        for i, (c, p) in enumerate(board.history, 1):
+        for i, (c, p, caps) in enumerate(board.history, 1):
             mv = xy_to_coord(p) if p else "pass"
-            parts.append(f"{i}.{'B' if c == 'b' else 'W'} {mv}")
+            tag = f" (captured {caps})" if caps else ""
+            parts.append(f"{i}.{'B' if c == 'b' else 'W'} {mv}{tag}")
         return "  ".join(parts)
 
     def _board_text(self, board):
@@ -257,6 +258,13 @@ class GoGame(Game):
             f"\nCaptures — you: {board.captures[me]}, opponent: {board.captures[opp]}. "
             f"Komi: {self.komi} (White).",
         ]
+        if board.history:
+            lc, lp, lcaps = board.history[-1]
+            if lcaps:
+                mv = xy_to_coord(lp)
+                parts.append(f"\nNOTE: your opponent's last move ({mv}) CAPTURED "
+                             f"{lcaps} of your stone(s) — they have been removed "
+                             "from the board.")
         if board.simple_ko is not None:
             parts.append(f"\nKO: playing at {xy_to_coord(board.simple_ko)} is "
                          "currently forbidden (it would retake the ko immediately).")
@@ -358,7 +366,7 @@ class GoGame(Game):
             return s.replace("\\", "\\\\").replace("]", "\\]")
 
         nodes = []
-        for i, (c, p) in enumerate(board.history):
+        for i, (c, p, _caps) in enumerate(board.history):
             node = f";{'B' if c == 'b' else 'W'}[{sgf_coord(p)}]"
             if i < len(state["comments"]) and state["comments"][i]:
                 node += f"C[{esc(state['comments'][i])}]"
