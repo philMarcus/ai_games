@@ -6,7 +6,7 @@ simultaneously each round. The horizon is HIDDEN from the players (a known
 round count unravels by backward induction into defect-always)."""
 
 from core.game import Game
-from core.term import BOLD, DIM, RESET
+from core.term import BOLD, DIM, RESET, YELLOW
 
 # Standard payoff matrix: T=5 (temptation), R=3 (reward), P=1 (punishment), S=0 (sucker).
 PAYOFF = {("cooperate", "cooperate"): (3, 3),
@@ -82,6 +82,7 @@ class IPDGame(Game):
                 "history": [],          # per round: {"actions": {...}, "messages": [...]}
                 "messages": [],         # this round's chat: [(role, text), ...]
                 "pending": {},          # this round's committed decisions
+                "just_resolved": None,  # set when a round resolves, for the reveal
                 "scores": {"p1": 0, "p2": 0}}
 
     def _chat_order(self, state):
@@ -129,7 +130,9 @@ class IPDGame(Game):
             parts.append(f"\nThis round's discussion so far:\n{talk}")
         if state["phase"] == "chat":
             parts.append("\nThis is the MESSAGE step. Write your message to your "
-                         "opponent for this round as JSON. Do NOT decide yet — you "
+                         "opponent for this round as JSON. Put what you want to say "
+                         'in the "message" field — that is what your opponent reads; '
+                         'the "comment" field stays private. Do NOT decide yet — you '
                          "will secretly commit cooperate/defect in a separate step "
                          "after the messages; nothing you say here is binding.")
         else:
@@ -153,14 +156,16 @@ class IPDGame(Game):
             state["messages"].append((role, msg))
             if len(state["messages"]) == 2:
                 state["phase"] = "decide"
-            return "ok", f"“{msg[:120]}”"
+            return "ok", f'says: "{msg[:150]}"'
 
         choice = str(action.get("action", "")).strip().lower()
         if choice not in ("cooperate", "defect"):
             return "illegal", 'action must be "cooperate" or "defect"'
         state["pending"][role] = choice
         if len(state["pending"]) < 2:
-            return "ok", f"{choice} (committed)"
+            # Symmetric with the second mover: the choice stays sealed until
+            # both are in; the reveal happens in render().
+            return "ok", "seals decision"
 
         # Second decision resolves the round.
         a1, a2 = state["pending"]["p1"], state["pending"]["p2"]
@@ -170,20 +175,28 @@ class IPDGame(Game):
         state["history"].append({"actions": {"p1": a1, "p2": a2},
                                  "messages": list(state["messages"])})
         n = state["round"]
+        state["just_resolved"] = (n, a1, a2, s1, s2)
         state["round"] += 1
         state["pending"] = {}
         state["messages"] = []
         state["phase"] = "chat" if self.chat else "decide"
-        return "ok", (f"{choice} — round {n}: p1 {a1.upper()} / p2 {a2.upper()} "
-                      f"(+{s1} / +{s2})")
+        return "ok", "seals decision"
 
     # ── presentation / results ───────────────────────────────────────────
     def render(self, state):
-        s = state["scores"]
-        done = len(state["history"])
-        if not done:
+        """Quiet between actions; the big reveal when a round resolves."""
+        if state["just_resolved"] is None:
             return ""
-        return (f"  {DIM}score after {done} round(s):{RESET} "
+        n, a1, a2, s1, s2 = state["just_resolved"]
+        state["just_resolved"] = None
+        s = state["scores"]
+        verdict = ("mutual cooperation" if (a1, a2) == ("cooperate", "cooperate")
+                   else "mutual defection" if (a1, a2) == ("defect", "defect")
+                   else ("p1 betrays p2" if a1 == "defect" else "p2 betrays p1"))
+        return (f"\n  {BOLD}{YELLOW}ROUND {n} REVEALED:{RESET} "
+                f"p1 {BOLD}{a1.upper()}{RESET} / p2 {BOLD}{a2.upper()}{RESET}"
+                f"  {DIM}({verdict}){RESET}  +{s1} / +{s2}\n"
+                f"  {DIM}totals after {len(state['history'])} round(s):{RESET} "
                 f"{BOLD}p1 {s['p1']} — {s['p2']} p2{RESET}")
 
     def result(self, state, forfeit=None, capped=False):

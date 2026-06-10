@@ -352,10 +352,14 @@ def test_codenames_board_setup():
     assert len(cn_words(state, "target")) == 9
     assert len(cn_words(state, "assassin")) == 1
     assert len(cn_words(state, "neutral")) == 15
-    # guesser observation must not leak the colors; spymaster's must show them
+    # guesser observation must not leak the colors; spymaster's grouped map must
     obs = g.observation(state, "guesser")
-    assert "— TARGET" not in obs and "— NEUTRAL" not in obs and "— ASSASSIN" not in obs
-    assert "— TARGET" in g.observation(state, "spymaster")
+    assert "SECRET MAP" not in obs and "ASSASSIN:" not in obs
+    sobs = g.observation(state, "spymaster")
+    assert "TARGETS still hidden (9):" in sobs
+    assert f"THE ASSASSIN: {cn_words(state, 'assassin')[0]}" in sobs
+    # every word appears in the spymaster map
+    assert all(w in sobs for w in state["words"])
 
 
 def test_codenames_clue_legality():

@@ -119,15 +119,36 @@ class CodenamesGame(Game):
         return SPYMASTER_SYSTEM if role == "spymaster" else GUESSER_SYSTEM
 
     def _board_for(self, state, role):
+        if role == "spymaster":
+            return self._secret_map(state)
         rows = []
         for w in state["words"]:
             if w in state["revealed"]:
                 rows.append(f"  {w} — REVEALED ({state['revealed'][w]})")
-            elif role == "spymaster":
-                rows.append(f"  {w} — {state['kinds'][w].upper()}")
             else:
                 rows.append(f"  {w}")
         return "\n".join(rows)
+
+    def _secret_map(self, state):
+        """Spymaster view: grouped by kind, hidden vs found — far easier to
+        clue from than the guesser's board order."""
+        def words(kind, revealed):
+            return [w for w in state["words"]
+                    if state["kinds"][w] == kind
+                    and (w in state["revealed"]) == revealed]
+
+        assassin = words("assassin", False) + words("assassin", True)
+        lines = ["YOUR SECRET MAP:",
+                 f"  TARGETS still hidden ({len(words('target', False))}): "
+                 + (", ".join(words("target", False)) or "(none)"),
+                 f"  targets already found: "
+                 + (", ".join(words("target", True)) or "(none)"),
+                 f"  neutral, unrevealed: "
+                 + (", ".join(words("neutral", False)) or "(none)"),
+                 f"  neutral, hit so far: "
+                 + (", ".join(words("neutral", True)) or "(none)"),
+                 f"  THE ASSASSIN: {assassin[0]} — your partner must NEVER pick this"]
+        return "\n".join(lines)
 
     def _history(self, state):
         if not state["log"]:
@@ -144,8 +165,7 @@ class CodenamesGame(Game):
         if role == "spymaster":
             return (f"Turn {state['turn']} of {self.turn_limit} "
                     f"({left} target words still hidden).\n"
-                    f"\nThe board (colors are YOUR secret knowledge):\n"
-                    f"{self._board_for(state, 'spymaster')}\n"
+                    f"\n{self._board_for(state, 'spymaster')}\n"
                     f"\nClue history:\n{self._history(state)}\n"
                     f"\nGive your clue now as JSON: one word and a count "
                     f"(1-{min(9, left)}).")
