@@ -383,7 +383,7 @@ def run_tournament(client, game, competitors, name, rounds, tdir, opts):
                             header=f"Game {idx}/{total}")
         keep = {k: outcome.get(k) for k in
                 ("labels", "winner", "summary", "forfeit", "turns", "scores",
-                 "stats", "run_dir", "when")}
+                 "extra", "stats", "run_dir", "when")}
         g.update({"status": "done", "result": keep})
         atomic_write_json(state_path, tstate)   # crash-safe: flush after each game
         game.standings(labels, completed(),

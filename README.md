@@ -22,8 +22,12 @@ plus a small Game interface that each game plugs into. See `PLAN.md` for the des
 - **20q** — Twenty Questions: the answerer proposes candidate secrets and the
   harness dice pick one (committed up front so it can't drift; recent secrets
   are excluded for variety), then the asker deduces it in `--questions` tries.
+- **codenames** — cooperative: the spymaster sees the hidden 9-target/1-assassin
+  map and gives one-word clues; the guesser guesses one word at a time and may
+  STOP to bank the turn. Theory of mind + risk management; the assassin ends
+  everything. Standings rank by average targets found.
 
-Planned: Go 9×9, Codenames, who's-on-first.
+Planned: Go 9×9, who's-on-first.
 
 ## Requirements
 
@@ -49,9 +53,10 @@ py play.py chess --tournament bench --models qwen3:14b,phi4,gemma3:12b --rounds 
 # per-competitor settings via a roster
 py play.py chess --roster rosters/example.yaml --white gemma-fast --black gemma-slow
 
-# prisoner's dilemma with negotiation; 20 Questions
+# prisoner's dilemma with negotiation; 20 Questions; Codenames
 py play.py ipd --p1 gemma4:26b --p2 gpt-oss:20b --chat --no-think
 py play.py 20q --answerer gemma4:26b --asker qwen3:14b --no-think
+py play.py codenames --spymaster gemma4:26b --guesser qwen3:14b --no-think
 ```
 
 `py play.py --help` lists games; `py play.py <game> --help` lists that game's flags.
@@ -103,6 +108,7 @@ Chess extras: `--board-input` (adds a redundant ASCII letter-grid board to the p
 `--eval` / `--engine PATH` (Stockfish average-centipawn-loss scoring).
 IPD extras: `--chat`, `--ipd-rounds N` (hidden from the players).
 20q extras: `--questions N` (asker's budget, default 20).
+Codenames extras: `--turns N` (clue turns to find all 9 targets, default 9).
 
 ## Tests
 

@@ -327,6 +327,91 @@ def test_twentyq_exhaustion():
     shutil.rmtree(tmp)
 
 
+# ── Codenames ─────────────────────────────────────────────────────────────
+
+def cn_game(turns=9):
+    import random
+    from games.codenames import CodenamesGame
+    g = CodenamesGame()
+    g.turn_limit = turns
+    g.rng = random.Random(11)
+    return g
+
+
+def cn_words(state, kind):
+    return [w for w in state["words"] if state["kinds"][w] == kind]
+
+
+def test_codenames_board_setup():
+    g = cn_game()
+    state = g.initial_state()
+    assert len(state["words"]) == 25
+    assert len(cn_words(state, "target")) == 9
+    assert len(cn_words(state, "assassin")) == 1
+    assert len(cn_words(state, "neutral")) == 15
+    # guesser observation must not leak the colors; spymaster's must show them
+    obs = g.observation(state, "guesser")
+    assert "— TARGET" not in obs and "— NEUTRAL" not in obs and "— ASSASSIN" not in obs
+    assert "— TARGET" in g.observation(state, "spymaster")
+
+
+def test_codenames_clue_legality():
+    g = cn_game()
+    state = g.initial_state()
+    board_word = state["words"][0]
+    assert g.apply(state, "spymaster", {"clue": board_word, "count": 2})[0] == "illegal"
+    assert g.apply(state, "spymaster", {"clue": "two words", "count": 2})[0] == "illegal"
+    assert g.apply(state, "spymaster", {"clue": "zzz", "count": 99})[0] == "illegal"
+    verdict, _ = g.apply(state, "spymaster", {"clue": "concept", "count": 2})
+    assert verdict == "ok" and state["clue"] == "concept" and state["guesses_left"] == 3
+
+
+def test_codenames_guess_flow():
+    g = cn_game()
+    state = g.initial_state()
+    targets = cn_words(state, "target")
+    neutral = cn_words(state, "neutral")[0]
+    assassin = cn_words(state, "assassin")[0]
+
+    g.apply(state, "spymaster", {"clue": "things", "count": 2})
+    # STOP before any guess is illegal
+    assert g.apply(state, "guesser", {"guess": "STOP"})[0] == "illegal"
+    # target keeps the turn alive
+    assert g.apply(state, "guesser", {"guess": targets[0].lower()})[0] == "ok"
+    assert state["found"] == 1 and g.current_role(state) == "guesser"
+    # re-guessing a revealed word is illegal
+    assert g.apply(state, "guesser", {"guess": targets[0]})[0] == "illegal"
+    # neutral ends the turn → spymaster again
+    assert g.apply(state, "guesser", {"guess": neutral})[0] == "ok"
+    assert state["turn"] == 2 and g.current_role(state) == "spymaster"
+    # STOP banks a turn after one correct guess
+    g.apply(state, "spymaster", {"clue": "more", "count": 1})
+    g.apply(state, "guesser", {"guess": targets[1]})
+    assert g.apply(state, "guesser", {"guess": "stop"})[0] == "ok"
+    assert state["turn"] == 3
+    # assassin ends everything
+    g.apply(state, "spymaster", {"clue": "doom", "count": 1})
+    g.apply(state, "guesser", {"guess": assassin})
+    assert g.is_over(state) and state["assassin_hit"] == assassin
+    res = g.result(state)
+    assert res["extra"]["assassin"] and res["winner"] is None
+    assert res["extra"]["found"] == 2
+
+
+def test_codenames_win():
+    g = cn_game()
+    state = g.initial_state()
+    targets = cn_words(state, "target")
+    for w in targets[:-1]:                       # reveal 8 of 9 directly
+        state["revealed"][w] = "target"
+    state["found"] = 8
+    g.apply(state, "spymaster", {"clue": "final", "count": 1})
+    verdict, disp = g.apply(state, "guesser", {"guess": targets[-1]})
+    assert verdict == "ok" and state["won"] and g.is_over(state)
+    res = g.result(state)
+    assert res["extra"]["cleared"] and res["scores"]["guesser"] == 9.0
+
+
 # ── competitor / roster ───────────────────────────────────────────────────
 
 def test_competitor_roundtrip():
