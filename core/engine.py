@@ -169,7 +169,9 @@ def play_game(client, game, assignment, opts, header=""):
     record (also written to a run dir unless opts['record'] is False)."""
     state = game.initial_state()
     events = []
-    role_color = {r: ROLE_COLORS[i % len(ROLE_COLORS)] for i, r in enumerate(game.roles)}
+    custom_colors = getattr(game, "role_colors", {})
+    role_color = {r: custom_colors.get(r, ROLE_COLORS[i % len(ROLE_COLORS)])
+                  for i, r in enumerate(game.roles)}
     labels = {r: assignment[r].label for r in game.roles}
     forfeit = None
     started = time.time()

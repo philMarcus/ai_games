@@ -28,10 +28,13 @@ def get_game(name):
     if name in ("codenames", "codebreakers"):
         from games.codenames import CodenamesGame
         return CodenamesGame
+    if name in ("go",):
+        from games.go import GoGame
+        return GoGame
     return None
 
 
-GAME_NAMES = ["chess", "ipd", "20q", "codenames"]
+GAME_NAMES = ["chess", "ipd", "20q", "codenames", "go"]
 
 
 def build_parser(game_cls):

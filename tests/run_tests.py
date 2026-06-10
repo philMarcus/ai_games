@@ -13,6 +13,9 @@ from contextlib import redirect_stdout
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from core.term import utf8_stdout
+utf8_stdout()
+
 import chess as pychess
 
 from core import engine
@@ -410,6 +413,86 @@ def test_codenames_win():
     assert verdict == "ok" and state["won"] and g.is_over(state)
     res = g.result(state)
     assert res["extra"]["cleared"] and res["scores"]["guesser"] == 9.0
+
+
+# ── Go ────────────────────────────────────────────────────────────────────
+
+def test_go_coords():
+    from games.go import coord_to_xy, xy_to_coord
+    assert coord_to_xy("A1") == (0, 0)
+    assert coord_to_xy("e5") == (4, 4)
+    assert coord_to_xy("J9") == (8, 8)     # J is the 9th column (no I)
+    assert coord_to_xy("I5") is None
+    assert coord_to_xy("Z3") is None and coord_to_xy("E10") is None
+    assert xy_to_coord((8, 8)) == "J9"
+
+
+def test_go_capture_and_suicide():
+    from games.go import GoBoard
+    b = GoBoard()
+    assert b.play("w", (0, 0))[0] == "ok"
+    assert b.play("b", (1, 0))[0] == "ok"
+    v, caps = b.play("b", (0, 1))           # fills white's last liberty
+    assert v == "ok" and caps == 1
+    assert (0, 0) not in b.grid and b.captures["b"] == 1
+    # suicide: white back into the (0,0) corner now has no liberties
+    v, reason = b.play("w", (0, 0))
+    assert v == "illegal" and "suicide" in reason
+    # occupied
+    assert b.play("w", (1, 0))[0] == "illegal"
+
+
+def test_go_superko():
+    from games.go import GoBoard
+    b = GoBoard()
+    # classic ko shape around (1,1)/(2,1)
+    for color, p in [("b", (1, 0)), ("b", (0, 1)), ("b", (1, 2)),
+                     ("w", (2, 0)), ("w", (1, 1)), ("w", (3, 1)), ("w", (2, 2))]:
+        assert b.play(color, p)[0] == "ok"
+    v, caps = b.play("b", (2, 1))           # black captures the ko stone at (1,1)
+    assert v == "ok" and caps == 1
+    assert b.simple_ko == (1, 1)
+    v, reason = b.play("w", (1, 1))         # immediate recapture forbidden
+    assert v == "illegal" and "ko" in reason.lower()
+    assert b.play("w", (5, 5))[0] == "ok"   # white must play elsewhere
+
+
+def test_go_scoring():
+    from games.go import GoBoard
+    b = GoBoard()
+    b.play("b", (0, 0))
+    assert b.area_score() == (81, 0)        # all empty space reaches only black
+    b.play("w", (8, 8))
+    assert b.area_score() == (1, 1)         # shared empty region is neutral
+
+
+def test_go_full_game_and_sgf():
+    from games.go import GoGame
+    g = GoGame()
+    seq = [json.dumps({"move": m, "comment": f"move {m}"})
+           for m in ("E5", "D3", "pass", "pass")]
+    client = MockClient(script=seq)
+    tmp = tempfile.mkdtemp()
+    outcome = engine.play_game(client, g, {"black": mk("b-model"),
+                                           "white": mk("w-model")}, opts(tmp))
+    # board: 1 black stone, 1 white stone, neutral space → white wins on komi
+    assert outcome["scores"] == {"black": 1.0, "white": 8.0}
+    assert outcome["winner"] == "w-model"
+    sgf = open(os.path.join(outcome["run_dir"], "game.sgf"), encoding="utf-8").read()
+    assert sgf.startswith("(;GM[1]FF[4]") and "SZ[9]" in sgf
+    assert ";B[ee]" in sgf and ";W[dg]" in sgf      # E5 / D3 in SGF coords
+    assert ";B[]" in sgf and "C[move E5]" in sgf    # pass + comment
+    shutil.rmtree(tmp)
+
+
+def test_go_illegal_feedback():
+    from games.go import GoGame
+    g = GoGame()
+    state = g.initial_state()
+    assert g.apply(state, "black", {"move": "I5", "comment": ""})[0] == "illegal"
+    state["board"].play("b", (4, 4))
+    v, reason = g.apply(state, "white", {"move": "E5", "comment": ""})
+    assert v == "illegal" and "occupied" in reason
 
 
 # ── competitor / roster ───────────────────────────────────────────────────
