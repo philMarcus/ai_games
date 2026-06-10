@@ -70,7 +70,20 @@ py play.py go --black gemma4:26b --white gpt-oss:20b --no-think --move-time 60
 # telephone through every installed local model (or pick the chain with --models)
 py play.py telephone --no-think
 py play.py telephone --models gemma4:26b,qwen3:14b,phi4 --length paragraph --steps 30
+
+# play a model yourself: "human" is a valid competitor anywhere a model name goes
+py play.py chess --white human --black gemma4:26b --no-comment
+py play.py codenames --spymaster gemma4:26b --guesser human
 ```
+
+## Playing as a human
+
+Use `human` as the competitor name for any role (or in `--models` for telephone).
+On your turn the game state is printed and you're prompted **per field** of the
+action (e.g. `move>`, then `comment>`); enums and numbers are validated as you
+type. Humans get unlimited retries on illegal actions — but `--move-time` still
+applies, so you can lose on the clock. With `--no-comment`, the comment field
+disappears for everyone: models aren't asked for one, humans aren't prompted.
 
 `py play.py --help` lists games; `py play.py <game> --help` lists that game's flags.
 
@@ -113,6 +126,7 @@ records. Nothing is ephemeral.
 | `--max-rounds N`      | Cap on actions per game (chess default 200 plies; capped games adjudicated). |
 | `--move-time SECONDS` | Flat per-move clock; failing to act in time loses ("flag fall"). |
 | `--num-predict N`     | Max tokens per reply, shared by thinking + answer (default 2048). |
+| `--no-comment`        | Drop the private-comment field: models aren't asked, humans aren't prompted. |
 | `--hide-think`        | Don't stream thinking to the terminal. |
 | `--delay SECONDS`     | Pause between moves for watchability. |
 | `--url URL`           | Ollama base URL (auto-detects WSL2 host). |

@@ -21,10 +21,17 @@ class Competitor:
     effort: str = None  # "low"|"medium"|"high" or None (default thinking)
     temperature: float = 0.7
 
+    @property
+    def is_human(self):
+        """A competitor named 'human' is played from the keyboard, not Ollama."""
+        return self.model.lower() == "human"
+
     def think_mode(self):
         return self.effort if self.effort else ("on" if self.think else "off")
 
     def desc(self):
+        if self.is_human:
+            return "human at the keyboard"
         return " · ".join([self.model, f"think={self.think_mode()}",
                            f"t={self.temperature:g}"])
 

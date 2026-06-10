@@ -70,6 +70,9 @@ def build_parser(game_cls):
                    help="Don't stream thinking to the terminal")
     p.add_argument("--num-predict", type=int, default=2048,
                    help="Max tokens per reply, shared by thinking + answer (default 2048)")
+    p.add_argument("--no-comment", dest="no_comment", action="store_true",
+                   help="Drop the private-comment field entirely: models aren't asked "
+                        "for one and humans aren't prompted")
     p.add_argument("--temperature", type=float, default=0.7,
                    help="Sampling temperature (default 0.7)")
     p.add_argument("--retries", type=int, default=2,
@@ -111,6 +114,8 @@ def main(argv=None):
     roster = load_roster(args.roster, installed) if args.roster else {}
 
     def make_adhoc(name, explicit=True):
+        if name.lower() == "human":
+            return Competitor("human", "human", think=False)
         model = resolve_model(name, explicit=explicit, installed=installed)
         return Competitor(model, model, gthink, args.think_effort, args.temperature)
 
@@ -122,7 +127,7 @@ def main(argv=None):
     opts = {
         "retries": args.retries, "num_predict": args.num_predict,
         "move_time": args.move_time, "delay": args.delay,
-        "show_think": not args.hide_think,
+        "show_think": not args.hide_think, "no_comment": args.no_comment,
         "max_rounds": args.max_rounds or game_cls.max_rounds_default,
         "runs_dir": args.runs_dir, "record": True,
     }
@@ -152,12 +157,12 @@ def main(argv=None):
                 return {l: roster[l] for l in sel}
             return dict(roster)
         if args.models:
-            names = [resolve_model(m.strip(), True, installed)
+            comps = [make_adhoc(m.strip())
                      for m in args.models.split(",") if m.strip()]
-        else:
-            names = [n for n, _ in installed]
-            if not args.include_cloud:
-                names = [m for m in names if not m.endswith(":cloud")]
+            return {c.label: c for c in comps}
+        names = [n for n, _ in installed]
+        if not args.include_cloud:
+            names = [m for m in names if not m.endswith(":cloud")]
         names = list(dict.fromkeys(names))
         return {m: Competitor(m, m, gthink, args.think_effort, args.temperature)
                 for m in names}
@@ -200,11 +205,8 @@ def main(argv=None):
             if args.model and args.model in roster:
                 base = roster[args.model]
             else:
-                base_model = resolve_model(args.model or DEFAULT_MODEL,
-                                           explicit=args.model is not None,
-                                           installed=installed)
-                base = Competitor(base_model, base_model, gthink,
-                                  args.think_effort, args.temperature)
+                base = make_adhoc(args.model or DEFAULT_MODEL,
+                                  explicit=args.model is not None)
             picked = [resolve_competitor(getattr(args, role)) or base
                       for role in game_cls.roles]
             if len(picked) == 2:

@@ -53,10 +53,101 @@ def slug(s):
 # One turn: get a legal action from a competitor (retries → forfeit)
 # ──────────────────────────────────────────────────────────────────────────
 
+def strip_comment_schema(schema):
+    """--no-comment: remove the private-comment field from an action schema."""
+    s = json.loads(json.dumps(schema))
+    s.get("properties", {}).pop("comment", None)
+    if "required" in s:
+        s["required"] = [f for f in s["required"] if f != "comment"]
+    return s
+
+
+def prompt_human_field(name, spec, required):
+    """Read one schema field from the keyboard. Returns the converted value,
+    or None for an optional field left empty. Raises EOFError if input ends."""
+    hints = []
+    if "enum" in spec:
+        hints.append("/".join(str(e) for e in spec["enum"]))
+    elif spec.get("type") == "integer":
+        hints.append("number")
+    elif spec.get("type") == "array":
+        hints.append("comma-separated")
+    if not required:
+        hints.append("optional")
+    hint = f" ({'; '.join(hints)})" if hints else ""
+    while True:
+        raw = input(f"  {name}{hint}> ").strip()
+        if not raw:
+            if required:
+                print("  (required)")
+                continue
+            return None
+        if spec.get("type") == "integer":
+            try:
+                return int(raw)
+            except ValueError:
+                print("  (enter a whole number)")
+                continue
+        if spec.get("type") == "array":
+            return [s.strip() for s in raw.split(",") if s.strip()]
+        if "enum" in spec:
+            for e in spec["enum"]:
+                if raw.lower() == str(e).lower():
+                    return e
+            print(f"  (one of: {', '.join(str(e) for e in spec['enum'])})")
+            continue
+        return raw
+
+
+def human_turn(game, state, role, comp, schema, opts, events):
+    """A human plays this turn from the keyboard, prompted per schema field.
+    Unlimited retries on illegal actions (a typo shouldn't forfeit), but the
+    per-move clock still applies."""
+    deadline = (time.time() + opts["move_time"]) if opts["move_time"] else None
+    print(f"{DIM}{game.observation(state, role)}{RESET}")
+    if deadline:
+        print(f"{YELLOW}  (you have {opts['move_time']:g}s on the clock){RESET}")
+    while True:
+        if deadline is not None and time.time() >= deadline:
+            return "forfeit", "time", None
+        t0 = time.time()
+        action = {}
+        try:
+            for name, spec in schema.get("properties", {}).items():
+                required = name in schema.get("required", []) and name != "comment"
+                val = prompt_human_field(name, spec, required)
+                if val is not None:
+                    action[name] = val
+        except EOFError:
+            return "forfeit", "illegal", None
+        elapsed = time.time() - t0
+        if deadline is not None and time.time() >= deadline:
+            print(f"{RED}  ✗ too slow — flag fall{RESET}")
+            return "forfeit", "time", None
+        verdict, info = game.apply(state, role, action)
+        if verdict == "ok":
+            events.append({"type": "action", "role": role, "label": comp.label,
+                           "action": action, "display": info,
+                           "elapsed": round(elapsed, 2)})
+            comment = "" if opts.get("no_comment") else game.comment_of(action)
+            return "ok", info, comment
+        print(f"{RED}  ! illegal: {game.action_summary(action)} ({info}) "
+              f"— try again{RESET}")
+        events.append({"type": "illegal", "role": role, "label": comp.label,
+                       "action": action, "reason": info,
+                       "elapsed": round(elapsed, 2)})
+
+
 def take_turn(client, game, state, role, comp, opts, events):
     """Run one role's turn. On success the action is applied to state.
     Returns ("ok", display, comment) or ("forfeit", kind) with kind
     'illegal'|'time'. Appends attempt records to `events`."""
+    schema = game.action_schema(state, role)
+    if opts.get("no_comment"):
+        schema = strip_comment_schema(schema)
+    if comp.is_human:
+        return human_turn(game, state, role, comp, schema, opts, events)
+
     system = game.system_prompt(role)
     if opts["move_time"]:
         system += (f"\nTIME CONTROL: you have at most {opts['move_time']} seconds to "
@@ -93,7 +184,7 @@ def take_turn(client, game, state, role, comp, opts, events):
             comp.model,
             [{"role": "system", "content": system},
              {"role": "user", "content": obs}],
-            schema=game.action_schema(state, role), temperature=comp.temperature,
+            schema=schema, temperature=comp.temperature,
             num_predict=opts["num_predict"], think=comp.think,
             think_effort=comp.effort, deadline=deadline, on_think=on_think)
         elapsed = time.time() - t0
@@ -134,7 +225,8 @@ def take_turn(client, game, state, role, comp, opts, events):
             events.append({"type": "action", "role": role, "label": comp.label,
                            "action": action, "display": info,
                            "elapsed": round(elapsed, 2)})
-            return "ok", info, game.comment_of(action)
+            comment = "" if opts.get("no_comment") else game.comment_of(action)
+            return "ok", info, comment
 
         # illegal
         if timed_out:
@@ -147,7 +239,7 @@ def take_turn(client, game, state, role, comp, opts, events):
                     f"rejected as illegal: {info}. Do not propose any of those again; "
                     "choose a different, legal action.")
         sys.stdout.write(f"{RED}  ! illegal: {name} ({info}){tail}{RESET}\n")
-        comment = game.comment_of(action)
+        comment = "" if opts.get("no_comment") else game.comment_of(action)
         if comment:
             sys.stdout.write(f"{DIM}    “{comment}”{RESET}\n")
         events.append({"type": "illegal", "role": role, "label": comp.label,

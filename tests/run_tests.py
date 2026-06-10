@@ -580,6 +580,81 @@ def test_telephone_stop_on_mutation():
     shutil.rmtree(tmp)
 
 
+# ── human player & --no-comment ───────────────────────────────────────────
+
+def test_no_comment_schema():
+    game = ChessGame()
+    state = game.initial_state()
+    client = MockClient(script=[json.dumps({"move": "e4"})])
+    events = []
+    tmp = tempfile.mkdtemp()
+    got = engine.take_turn(client, game, state, "white", mk(),
+                           opts(tmp, no_comment=True), events)
+    shutil.rmtree(tmp)
+    assert got[0] == "ok" and got[2] == ""        # no comment returned
+    sent = client.calls[0]["schema"]
+    assert "comment" not in sent["properties"]
+    assert "comment" not in sent.get("required", [])
+
+
+def feed_stdin(text):
+    old = sys.stdin
+    sys.stdin = io.StringIO(text)
+    return old
+
+
+def test_human_turn():
+    game = ChessGame()
+    state = game.initial_state()
+    from core.competitor import Competitor
+    comp = Competitor("human", "human")
+    assert comp.is_human
+    events = []
+    tmp = tempfile.mkdtemp()
+    old = feed_stdin("Zz9\n\ne4\ngood move\n")   # illegal, retry, then legal+comment
+    try:
+        got = engine.take_turn(None, game, state, "white", comp, opts(tmp), events)
+    finally:
+        sys.stdin = old
+    shutil.rmtree(tmp)
+    assert got[0] == "ok" and got[2] == "good move"
+    assert state["board"].fen().startswith("rnbqkbnr/pppppppp/8/8/4P3")
+    assert [e["type"] for e in events] == ["illegal", "action"]
+
+
+def test_human_no_comment():
+    game = ChessGame()
+    state = game.initial_state()
+    from core.competitor import Competitor
+    comp = Competitor("human", "human")
+    events = []
+    tmp = tempfile.mkdtemp()
+    old = feed_stdin("e4\n")                     # only the move is prompted
+    try:
+        got = engine.take_turn(None, game, state, "white", comp,
+                               opts(tmp, no_comment=True), events)
+    finally:
+        sys.stdin = old
+    shutil.rmtree(tmp)
+    assert got[0] == "ok" and got[2] == ""
+    assert events[-1]["action"] == {"move": "e4"}
+
+
+def test_human_eof_forfeits():
+    game = ChessGame()
+    state = game.initial_state()
+    from core.competitor import Competitor
+    comp = Competitor("human", "human")
+    tmp = tempfile.mkdtemp()
+    old = feed_stdin("")                         # input ends immediately
+    try:
+        got = engine.take_turn(None, game, state, "white", comp, opts(tmp), [])
+    finally:
+        sys.stdin = old
+    shutil.rmtree(tmp)
+    assert got[:2] == ("forfeit", "illegal")
+
+
 # ── competitor / roster ───────────────────────────────────────────────────
 
 def test_competitor_roundtrip():
