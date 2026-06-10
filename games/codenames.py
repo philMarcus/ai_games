@@ -56,8 +56,9 @@ GUESSER_SYSTEM = (
     "sees which of the 25 board words are targets; you only see the words. Each "
     "turn they give you a clue word and a number (how many board words it points "
     "to). You guess ONE word at a time:\n"
-    "- a TARGET: it is revealed, and you may keep guessing (up to the number "
-    "plus one bonus guess)\n"
+    "- a TARGET: it is revealed, and you may keep guessing — up to the clue's "
+    "number plus ONE bonus guess. The bonus guess exists so you may also pick "
+    "up a word left over from an EARLIER clue you never finished.\n"
     "- a NEUTRAL word: your turn ends\n"
     "- the ASSASSIN: you both lose INSTANTLY — if a word might be it, don't.\n"
     "After any correct guess you may also reply STOP to bank the turn instead "
@@ -177,7 +178,8 @@ class CodenamesGame(Game):
             got = ", ".join(f"{w} ({k})" for w, k in state["log"][-1]["guesses"])
             this_turn = (f"\nTHIS TURN you already guessed: {got}. Those words are "
                          "now revealed and CANNOT be guessed again — pick a "
-                         "DIFFERENT word that also fits the clue, or STOP.\n")
+                         "DIFFERENT word that fits the given clues (this turn's, "
+                         "or one left over from an earlier clue), or STOP.\n")
         return (f"Turn {state['turn']} of {self.turn_limit} "
                 f"({left} target words still hidden).\n"
                 f"\nThe board:\n{self._board_for(state, 'guesser')}\n"
