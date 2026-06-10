@@ -31,8 +31,10 @@ MOVE_SCHEMA = {
 SYSTEM_TMPL = (
     "You are a strong Go player playing a real game as {color} on a 9x9 board.\n"
     "Rules in force:\n"
-    "- Stones are placed on empty intersections. A group with no liberties "
-    "(empty adjacent points) is captured and removed.\n"
+    "- Stones are placed on empty intersections. A group with no liberties is "
+    "captured and removed. Liberties are the empty points directly adjacent "
+    "HORIZONTALLY or VERTICALLY — diagonals never count. The board edge is a "
+    "wall: an edge stone has at most 3 liberties, a corner stone at most 2.\n"
     "- Suicide (a move that leaves your own group with no liberties without "
     "capturing) is illegal.\n"
     "- Superko: a move may not recreate any previous whole-board position "
