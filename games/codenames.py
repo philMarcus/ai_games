@@ -172,12 +172,18 @@ class CodenamesGame(Game):
         guesses_left = state["guesses_left"]
         unrevealed = ", ".join(w for w in state["words"]
                                if w not in state["revealed"])
+        this_turn = ""
+        if state["log"] and state["log"][-1]["guesses"]:
+            got = ", ".join(f"{w} ({k})" for w, k in state["log"][-1]["guesses"])
+            this_turn = (f"\nTHIS TURN you already guessed: {got}. Those words are "
+                         "now revealed and CANNOT be guessed again — pick a "
+                         "DIFFERENT word that also fits the clue, or STOP.\n")
         return (f"Turn {state['turn']} of {self.turn_limit} "
                 f"({left} target words still hidden).\n"
                 f"\nThe board:\n{self._board_for(state, 'guesser')}\n"
                 f"\nClue history:\n{self._history(state)}\n"
                 f"\nCurrent clue: \"{state['clue']}\" {state['count']} — you have "
-                f"{guesses_left} guess(es) left this turn.\n"
+                f"{guesses_left} guess(es) left this turn.\n{this_turn}"
                 f"Your guess MUST be one of these unrevealed board words (the clue "
                 f"points AT them, it is not itself a guess):\n{unrevealed}\n"
                 f"Reply as JSON: \"guess\" is exactly one word from that list"
