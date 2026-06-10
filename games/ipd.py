@@ -47,9 +47,11 @@ SYSTEM = (
 
 CHAT_SYSTEM_EXTRA = (
     "\nEach round has TWO separate steps:\n"
-    "1. MESSAGE step — you and your opponent exchange one message each. Messages "
-    "are visible to the opponent and are non-binding talk: you may promise, "
-    "threaten, persuade, or deceive. You do NOT make your decision in this step.\n"
+    "1. MESSAGE step — you and your opponent exchange messages ({n} from each "
+    "side, alternating). Messages are visible to the opponent and are "
+    "non-binding talk: you may promise, threaten, persuade, or deceive. Keep "
+    "each message conversational — a few sentences at most. You do NOT make "
+    "your decision in this step.\n"
     "2. DECISION step — afterwards, in a separate turn, you secretly commit "
     "cooperate or defect. Only this step scores points.\n"
     "You will be told which step you are in; reply with only what that step asks for."
@@ -62,23 +64,25 @@ class IPDGame(Game):
     max_rounds_default = 2000   # actions, not rounds; is_over governs
 
     def __init__(self):
-        self.chat = False
+        self.chat_rounds = 0      # messages per side per round (0 = no chat)
         self.total_rounds = 20
 
     @classmethod
     def add_args(cls, p):
-        p.add_argument("--chat", action="store_true",
-                       help="Exchange one message each before every round's decisions")
+        p.add_argument("--chat", nargs="?", const=1, default=0, type=int,
+                       metavar="N",
+                       help="Exchange N messages each before every round's "
+                            "decisions (bare --chat means 1)")
         p.add_argument("--ipd-rounds", type=int, default=20,
                        help="Number of rounds (HIDDEN from the players; default 20)")
 
     def configure(self, args):
-        self.chat = args.chat
+        self.chat_rounds = max(0, args.chat)
         self.total_rounds = args.ipd_rounds
 
     # ── state ────────────────────────────────────────────────────────────
     def initial_state(self):
-        return {"round": 1, "phase": "chat" if self.chat else "decide",
+        return {"round": 1, "phase": "chat" if self.chat_rounds else "decide",
                 "history": [],          # per round: {"actions": {...}, "messages": [...]}
                 "messages": [],         # this round's chat: [(role, text), ...]
                 "pending": {},          # this round's committed decisions
@@ -92,7 +96,7 @@ class IPDGame(Game):
     def current_role(self, state):
         if state["phase"] == "chat":
             order = self._chat_order(state)
-            return order[len(state["messages"])]
+            return order[len(state["messages"]) % 2]
         return "p1" if "p1" not in state["pending"] else "p2"
 
     def is_over(self, state):
@@ -100,7 +104,8 @@ class IPDGame(Game):
 
     # ── prompts ──────────────────────────────────────────────────────────
     def system_prompt(self, role):
-        return SYSTEM + (CHAT_SYSTEM_EXTRA if self.chat else "")
+        return SYSTEM + (CHAT_SYSTEM_EXTRA.format(n=self.chat_rounds)
+                         if self.chat_rounds else "")
 
     def _history_text(self, state, role):
         opp = "p2" if role == "p1" else "p1"
@@ -129,12 +134,15 @@ class IPDGame(Game):
                 for who, text in state["messages"])
             parts.append(f"\nThis round's discussion so far:\n{talk}")
         if state["phase"] == "chat":
-            parts.append("\nThis is the MESSAGE step. Write your message to your "
-                         "opponent for this round as JSON. Put what you want to say "
-                         'in the "message" field — that is what your opponent reads; '
-                         'the "comment" field stays private. Do NOT decide yet — you '
-                         "will secretly commit cooperate/defect in a separate step "
-                         "after the messages; nothing you say here is binding.")
+            mine = sum(1 for who, _ in state["messages"] if who == role)
+            parts.append(f"\nThis is the MESSAGE step (your message {mine + 1} of "
+                         f"{self.chat_rounds} this round). Write your message to "
+                         "your opponent as JSON. Put what you want to say in the "
+                         '"message" field — that is what your opponent reads; the '
+                         '"comment" field stays private. Keep it to a few '
+                         "sentences. Do NOT decide yet — you will secretly commit "
+                         "cooperate/defect in a separate step after the messages; "
+                         "nothing you say here is binding.")
         else:
             parts.append("\nThis is the DECISION step. The messages (if any) are "
                          "done. Commit your SECRET decision for this round now as "
@@ -154,9 +162,9 @@ class IPDGame(Game):
             if not msg:
                 return "illegal", "empty message"
             state["messages"].append((role, msg))
-            if len(state["messages"]) == 2:
+            if len(state["messages"]) == 2 * self.chat_rounds:
                 state["phase"] = "decide"
-            return "ok", f'says: "{msg[:150]}"'
+            return "ok", f'says: "{msg}"'
 
         choice = str(action.get("action", "")).strip().lower()
         if choice not in ("cooperate", "defect"):
@@ -179,7 +187,7 @@ class IPDGame(Game):
         state["round"] += 1
         state["pending"] = {}
         state["messages"] = []
-        state["phase"] = "chat" if self.chat else "decide"
+        state["phase"] = "chat" if self.chat_rounds else "decide"
         return "ok", "seals decision"
 
     # ── presentation / results ───────────────────────────────────────────

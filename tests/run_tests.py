@@ -227,10 +227,10 @@ def test_tournament_and_resume():
 
 # ── IPD ───────────────────────────────────────────────────────────────────
 
-def ipd_game(chat=False, rounds=2):
+def ipd_game(chat=0, rounds=2):
     from games.ipd import IPDGame
     g = IPDGame()
-    g.chat = chat
+    g.chat_rounds = chat
     g.total_rounds = rounds
     return g
 
@@ -254,7 +254,7 @@ def test_ipd_pure():
 
 
 def test_ipd_chat():
-    g = ipd_game(chat=True, rounds=1)
+    g = ipd_game(chat=1, rounds=1)
     seq = [json.dumps({"message": "let us both cooperate, friend", "comment": "c"}),
            json.dumps({"message": "agreed, I will cooperate", "comment": "c"}),
            json.dumps({"action": "defect", "comment": "betrayal"}),
@@ -269,6 +269,24 @@ def test_ipd_chat():
     # the betrayal is in the readable export
     txt = open(os.path.join(outcome["run_dir"], "match.txt"), encoding="utf-8").read()
     assert "agreed, I will cooperate" in txt and "p1 DEFECT" in txt
+    shutil.rmtree(tmp)
+
+
+def test_ipd_multi_chat():
+    g = ipd_game(chat=2, rounds=1)
+    msgs = [f"m{i}" for i in range(1, 5)]
+    seq = ([json.dumps({"message": m, "comment": "c"}) for m in msgs]
+           + [json.dumps({"action": "cooperate", "comment": "c"}),
+              json.dumps({"action": "cooperate", "comment": "c"})])
+    client = MockClient(script=seq)
+    tmp = tempfile.mkdtemp()
+    outcome = engine.play_game(client, g, {"p1": mk("a"), "p2": mk("b")}, opts(tmp))
+    assert outcome["scores"] == {"p1": 3, "p2": 3}
+    # alternating speakers: p1, p2, p1, p2 — and the decider saw all 4 messages
+    decide_obs = client.calls[4]["messages"][1]["content"]
+    assert all(m in decide_obs for m in msgs)
+    # second exchange happened before any decision
+    assert "DECISION step" in decide_obs and "m4" in decide_obs
     shutil.rmtree(tmp)
 
 

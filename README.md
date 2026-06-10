@@ -133,7 +133,8 @@ records. Nothing is ephemeral.
 
 Chess extras: `--board-input` (adds a redundant ASCII letter-grid board to the prompt),
 `--eval` / `--engine PATH` (Stockfish average-centipawn-loss scoring).
-IPD extras: `--chat`, `--ipd-rounds N` (hidden from the players).
+IPD extras: `--chat [N]` (N messages each before every decision; bare `--chat` = 1),
+`--ipd-rounds N` (hidden from the players).
 20q extras: `--questions N` (asker's budget, default 20).
 Codenames extras: `--turns N` (clue turns to find all 9 targets, default 9).
 Go extras: `--komi F` (White's compensation, default 7.0).
