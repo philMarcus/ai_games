@@ -185,19 +185,27 @@ def main(argv=None):
                       "--games N for repeated chains, not --tournament.")
                 sys.exit(1)
             competitors = build_field()
-            if len(competitors) < 2:
-                print("Need at least 2 competitors for a chain game.")
+            select = getattr(game, "select_players", None)
+            if select is None:
+                if len(competitors) < 2:
+                    print("Need at least 2 competitors for a chain game.")
+                    sys.exit(1)
+                print(f"  Chain ({len(competitors)}): "
+                      f"{' → '.join(competitors)}")
+            elif not competitors:
+                print("The model pool is empty.")
                 sys.exit(1)
-            labels = list(competitors)
-            game.set_chain(labels)
-            print(f"  Chain ({len(labels)}): {' → '.join(labels)}")
             results = []
             for gnum in range(1, args.games + 1):
+                # Pool games (e.g. werewolf) deal a fresh cast every game.
+                players = select(competitors) if select else competitors
+                game.set_chain(list(players))
                 header = f"Game {gnum}/{args.games}" if args.games > 1 else ""
-                results.append(engine.play_game(client, game, competitors,
+                results.append(engine.play_game(client, game, players,
                                                 opts, header=header))
             if args.games > 1:
-                game.standings(labels, results, title="Overall fidelity")
+                game.standings(list(competitors), results,
+                               title="Overall standings")
             return
         if args.tournament is not None:
             competitors = build_field()

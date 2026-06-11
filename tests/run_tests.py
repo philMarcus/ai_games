@@ -809,6 +809,44 @@ def test_werewolf_redaction():
     assert g.comment_of({}) == ""        # notes never leak with a human present
 
 
+def test_werewolf_generous_targets():
+    g = ww_game()
+    state = g.initial_state()
+    state["_humans"] = []
+    wolf, seer = ww_who(state)
+    pool = [p for p in state["alive"] if p != wolf]
+    # markdown bold, case, stray punctuation all match
+    assert g._match_target(state, f"**{pool[0]}**", pool) == pool[0]
+    assert g._match_target(state, pool[0].upper() + ".", pool) == pool[0]
+    assert g._match_target(state, "nobody-real", pool) is None
+
+
+def test_werewolf_pool_and_names():
+    import random
+    from core.competitor import Competitor
+    g = ww_game()
+    g.rng = random.Random(9)
+    g.n_players = 7
+    pool = {"gemma4:26b": Competitor("gemma4:26b", "gemma4:26b"),
+            "qwen3:14b": Competitor("qwen3:14b", "qwen3:14b"),
+            "human": Competitor("human", "human")}
+    players = g.select_players(pool)
+    assert len(players) == 7
+    # the human is always seated, exactly once
+    humans = [c for c in players.values() if c.is_human]
+    assert len(humans) == 1
+    # table names: base stripped at the colon, dash, Codenames word
+    for name, c in players.items():
+        base = "human" if c.is_human else c.model.split(":")[0]
+        assert name.startswith(base + "-") and ":" not in name
+    # 3-model pool fills 7 seats → duplicates of underlying models exist
+    assert len({c.model for c in players.values()}) <= 3
+    # wolves scale with the table size
+    from games.werewolf import default_wolves
+    assert default_wolves(5) == 1 and default_wolves(7) == 2
+    assert default_wolves(10) == 3 and default_wolves(15) == 4
+
+
 def strip_ansi(s):
     return re.sub(r"\x1b\[[0-9;]*m", "", s)
 

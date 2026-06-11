@@ -34,14 +34,17 @@ plus a small Game interface that each game plugs into. See `PLAN.md` for the des
   in rotation must repeat the previous output EXACTLY for `--steps` turns
   (default 50). Any change is a mutation that propagates down the chain.
   Standings rank models by transcription fidelity.
-- **werewolf** — social deduction for the whole stable (5+ players; duplicates
-  allowed): secret wolves confer and kill by night, the seer inspects, the
-  village debates and casts sealed votes by day. Each player keeps an
-  append-only **private notebook** fed back every turn — the record contains
-  each model's secret diary next to its public lies. A player who can't act is
-  eliminated, not game-ending. With no human playing you spectate everything
-  (roles, night actions, notebooks); the moment a human joins, night actions
-  are anonymized and nothing spoils.
+- **werewolf** — social deduction: `--models` is a POOL from which `--players`
+  seats (default 7) are dealt with replacement — 3 models can fill a table, 15
+  yield a random cast — and every player gets a table name like
+  `gemma4-Lantern` (model base + random word; humans in the pool are always
+  seated). Wolves scale ~1 per 4 players. Secret wolves confer and kill by
+  night, the seer inspects, the village debates and casts sealed votes by day.
+  Each player keeps an append-only **private notebook** fed back every turn —
+  the record contains each model's secret diary next to its public lies. A
+  player who can't act is eliminated, not game-ending. With no human playing
+  you spectate everything; the moment a human joins, night actions are
+  anonymized and nothing spoils. Standings aggregate by underlying model.
 
 Planned: who's-on-first.
 
@@ -83,9 +86,9 @@ py play.py telephone --models gemma4:26b,qwen3:14b,phi4 --length paragraph --ste
 py play.py chess --white human --black gemma4:26b --no-comment
 py play.py codenames --spymaster gemma4:26b --guesser human
 
-# werewolf with seven models (or join in yourself — no spoilers shown)
+# werewolf: 7 seats dealt from the pool (or join in yourself — no spoilers shown)
 py play.py werewolf --no-think
-py play.py werewolf --models gemma4:26b,qwen3:14b,phi4,gemma3:12b,mistral-small3.2:24b,gpt-oss:20b,human
+py play.py werewolf --models gemma4:26b,qwen3:14b,human --players 9
 ```
 
 ## Playing as a human
@@ -152,8 +155,8 @@ Codenames extras: `--turns N` (clue turns to find all 9 targets, default 9).
 Go extras: `--komi F` (White's compensation, default 7.0).
 Telephone extras: `--length phrase|sentence|paragraph`, `--steps N` (default 50),
 `--stop-on-mutation` (end at the first change instead).
-Werewolf extras: `--wolves N` (default 2 with 7+ players, else 1), `--talk N`
-(discussion rounds per day, default 2).
+Werewolf extras: `--players N` (seats dealt from the pool, default 7), `--wolves N`
+(default scales ~1 per 4 players), `--talk N` (discussion rounds per day, default 2).
 
 ## Tests
 

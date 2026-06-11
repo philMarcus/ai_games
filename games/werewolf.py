@@ -15,10 +15,24 @@ Spectator vs player display: with no human in the field the terminal shows
 everything (roles, night actions, notebooks). The moment a human plays, night
 actions are anonymized and roles/notes are hidden — no spoilers."""
 
+import os
 import random
+import re
 
+from core.competitor import Competitor
 from core.game import Game
 from core.term import BOLD, CYBER, DIM, GREEN, RED, RESET, YELLOW
+
+
+def default_wolves(n_players):
+    """Canonical scaling: roughly a quarter of the village are wolves.
+    5-6 players: 1-2, 7-9: 2, 10-13: 3, 14-17: 4..."""
+    return max(1, (n_players + 2) // 4)
+
+
+def norm_name(s):
+    """Forgiving name matching: models love **bold** and stray punctuation."""
+    return re.sub(r"[^a-z0-9]", "", str(s).lower())
 
 NIGHT_KINDS = ("wolf_msg", "wolf_kill", "see")
 
@@ -71,32 +85,67 @@ class WerewolfGame(Game):
     max_rounds_default = 2000   # is_over governs
 
     def __init__(self):
-        self.n_wolves = None    # default decided from player count
+        self.n_wolves = None    # default scales with player count
+        self.n_players = 7
         self.talk_rounds = 2
         self.rng = random.Random()
+        self.words_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "data", "codenames_words.txt")
 
     @classmethod
     def add_args(cls, p):
+        p.add_argument("--players", type=int, default=7,
+                       help="Seats at the table, drawn from the model pool "
+                            "(default 7, minimum 5)")
         p.add_argument("--wolves", type=int, default=None,
-                       help="Number of werewolves (default: 2 with 7+ players, else 1)")
+                       help="Number of werewolves (default scales: ~1 per 4 players)")
         p.add_argument("--talk", type=int, default=2,
                        help="Discussion rounds per day (default 2)")
 
     def configure(self, args):
         self.n_wolves = args.wolves
+        self.n_players = max(5, args.players)
         self.talk_rounds = max(1, args.talk)
+
+    def select_players(self, pool):
+        """--models is a POOL: draw n_players seats from it with replacement
+        (3 models can fill 7 seats; 15 models yield a random 7). Humans in the
+        pool are always seated, once each. Every player gets a friendly table
+        name: model base (suffix stripped) + a random word — gemma4-Lantern."""
+        comps = list(pool.values())
+        humans = [c for c in comps if c.is_human]
+        others = [c for c in comps if not c.is_human]
+        seats = humans[:self.n_players]
+        fill = others or humans
+        while len(seats) < self.n_players:
+            seats.append(self.rng.choice(fill))
+        self.rng.shuffle(seats)
+        try:
+            with open(self.words_path, encoding="utf-8") as f:
+                words = [w.strip() for w in f if w.strip()]
+            picks = self.rng.sample(words, len(seats))
+        except Exception:
+            picks = [str(i) for i in range(1, len(seats) + 1)]
+        players = {}
+        for c, w in zip(seats, picks):
+            base = "human" if c.is_human else c.model.split(":")[0]
+            name = f"{base}-{w.title()}"
+            players[name] = Competitor(name, c.model, c.think, c.effort,
+                                       c.temperature)
+        return players
 
     def set_chain(self, labels):
         if len(labels) < 5:
             import sys
-            print("Werewolf needs at least 5 players (use --models, duplicates allowed).")
+            print("Werewolf needs at least 5 players.")
             sys.exit(1)
         self.roles = tuple(labels)
 
     # ── state ────────────────────────────────────────────────────────────
     def initial_state(self):
         players = list(self.roles)
-        wolves_n = self.n_wolves or (2 if len(players) >= 7 else 1)
+        wolves_n = self.n_wolves or default_wolves(len(players))
         shuffled = players[:]
         self.rng.shuffle(shuffled)
         wolves = shuffled[:wolves_n]
@@ -237,7 +286,7 @@ class WerewolfGame(Game):
     # ── prompts ──────────────────────────────────────────────────────────
     def system_prompt(self, role):
         n = len(self.roles)
-        w = self.n_wolves or (2 if n >= 7 else 1)
+        w = self.n_wolves or default_wolves(n)
         return SYSTEM.format(n=n, w=w, v=n - w - 1, talk=self.talk_rounds)
 
     def _roster(self, state):
@@ -336,9 +385,12 @@ class WerewolfGame(Game):
 
     # ── transitions ──────────────────────────────────────────────────────
     def _match_target(self, state, raw, pool):
-        raw = str(raw).strip().lower()
+        """Forgiving: ignores case, markdown (**name**), and stray punctuation."""
+        r = norm_name(raw)
+        if not r:
+            return None
         for p in pool:
-            if p.lower() == raw:
+            if norm_name(p) == r:
                 return p
         return None
 
@@ -473,15 +525,16 @@ class WerewolfGame(Game):
         return [path]
 
     def standings(self, labels, results, title="Standings"):
-        st = {l: {"gp": 0, "wins": 0, "wolf_gp": 0, "wolf_w": 0,
-                  "vill_w": 0, "survived": 0} for l in labels}
+        """Aggregated by underlying MODEL — table names change every game."""
+        st = {}
         for r in results:
             ex = r.get("extra") or {}
             roles, won = ex.get("roles", {}), ex.get("won", {})
+            models = r.get("models", {})
             for p in roles:
-                if p not in st:
-                    continue
-                s = st[p]
+                key = models.get(p, p)
+                s = st.setdefault(key, {"gp": 0, "wins": 0, "wolf_gp": 0,
+                                        "wolf_w": 0, "vill_w": 0, "survived": 0})
                 s["gp"] += 1
                 if roles[p] == "wolf":
                     s["wolf_gp"] += 1
@@ -493,8 +546,8 @@ class WerewolfGame(Game):
                         s["vill_w"] += 1
                 if p in ex.get("survivors", []):
                     s["survived"] += 1
-        order = sorted(labels, key=lambda l: -(st[l]["wins"] / st[l]["gp"]
-                                               if st[l]["gp"] else 0))
+        order = sorted(st, key=lambda l: -(st[l]["wins"] / st[l]["gp"]
+                                           if st[l]["gp"] else 0))
         print(f"\n{BOLD}{title}{RESET}")
         print(f"  {DIM}{'#':>2}  {'competitor':28} {'GP':>3} {'W':>3} "
               f"{'win%':>5} {'as-wolf':>8} {'as-vill':>8} {'lived':>5}{RESET}")
