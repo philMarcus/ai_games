@@ -21,7 +21,7 @@ import re
 
 from core.competitor import Competitor
 from core.game import Game
-from core.term import BOLD, CYBER, DIM, GREEN, RED, RESET, YELLOW
+from core.term import BOLD, CYBER, DIM, GREEN, NAME_PALETTE, RED, RESET, YELLOW
 
 
 def default_wolves(n_players):
@@ -62,9 +62,12 @@ SCHEMAS = {
 SYSTEM = (
     "You are playing WEREWOLF with {n} players: {w} werewolves, 1 seer, and "
     "{v} ordinary villagers. Roles are secret.\n"
-    "- Each NIGHT the werewolves (who know each other) confer privately and "
-    "choose a victim to kill. The seer secretly inspects one player and learns "
-    "whether they are a werewolf.\n"
+    "- The game opens with a quiet first night (NIGHT 0): only the seer acts — "
+    "they secretly inspect one player and NO ONE is killed. The werewolves' "
+    "first kill comes the following night.\n"
+    "- Each NIGHT thereafter the werewolves (who know each other) confer "
+    "privately and choose a victim to kill. The seer secretly inspects one "
+    "player and learns whether they are a werewolf.\n"
     "- Each DAY the night's death is announced (their role is revealed), all "
     "living players discuss in {talk} rounds of speeches, then everyone "
     "simultaneously casts a SEALED vote. The player with the most votes is "
@@ -157,7 +160,7 @@ class WerewolfGame(Game):
         state = {
             "players": players, "role_of": role_of,
             "alive": list(players),
-            "phase": "night", "night": 1, "day": 0,
+            "phase": "night", "night": 0, "day": 0,
             "queue": [],
             "wolf_chat": [], "wolf_votes": {}, "day_votes": {},
             "seer_log": [],
@@ -174,11 +177,14 @@ class WerewolfGame(Game):
         return [p for p in pool if state["role_of"][p] == "wolf"]
 
     def _night_queue(self, state):
-        wolves = self._wolves(state)
+        # Night 0 is the quiet opening night: only the seer acts — the wolves
+        # already know their allies, so they neither confer nor kill yet.
         q = []
-        if len(wolves) >= 2:
-            q += [(w, "wolf_msg") for w in wolves]
-        q += [(w, "wolf_kill") for w in wolves]
+        if state["night"] >= 1:
+            wolves = self._wolves(state)
+            if len(wolves) >= 2:
+                q += [(w, "wolf_msg") for w in wolves]
+            q += [(w, "wolf_kill") for w in wolves]
         q += [(p, "see") for p in state["alive"]
               if state["role_of"][p] == "seer"]
         return q
@@ -223,26 +229,33 @@ class WerewolfGame(Game):
         return state["over"]
 
     def _resolve_night(self, state):
-        # Ignore votes against players who died mid-night (e.g. eliminated).
-        votes = [t for t in state["wolf_votes"].values() if t in state["alive"]]
-        victim = None
-        if votes:
-            tally = {t: votes.count(t) for t in set(votes)}
-            top = max(tally.values())
-            victim = self.rng.choice(sorted(t for t, c in tally.items()
-                                            if c == top))
-        lines = [f"NIGHT {state['night']} ENDS."]
-        if victim:
-            self._kill(state, victim, f"Night {state['night']}")
-            lines.append(f"{victim} was killed in the night — they were a "
-                         f"{state['role_of'][victim].upper()}.")
+        if state["night"] == 0:
+            # The opening night: the seer has peeked, nobody dies.
+            state["reveal"] = ("The first night falls — the SEER opens their "
+                               "eyes and learns one player's true nature. No "
+                               "one is harmed on the opening night.")
         else:
-            lines.append("Nobody died in the night.")
+            # Ignore votes against players who died mid-night (e.g. eliminated).
+            votes = [t for t in state["wolf_votes"].values()
+                     if t in state["alive"]]
+            victim = None
+            if votes:
+                tally = {t: votes.count(t) for t in set(votes)}
+                top = max(tally.values())
+                victim = self.rng.choice(sorted(t for t, c in tally.items()
+                                                if c == top))
+            lines = [f"NIGHT {state['night']} ENDS."]
+            if victim:
+                self._kill(state, victim, f"Night {state['night']}")
+                lines.append(f"{victim} was killed in the night — they were a "
+                             f"{state['role_of'][victim].upper()}.")
+            else:
+                lines.append("Nobody died in the night.")
+            state["reveal"] = "\n".join(lines)
         state["wolf_chat"], state["wolf_votes"] = [], {}
-        state["reveal"] = "\n".join(lines)
         if self._check_win(state):
             return
-        state["day"] = state["night"]
+        state["day"] = state["night"] + 1
         state["phase"] = "day"
         state["queue"] = self._day_queue(state)
 
@@ -273,7 +286,7 @@ class WerewolfGame(Game):
         state["reveal"] = "\n".join(lines)
         if self._check_win(state):
             return
-        state["night"] += 1
+        state["night"] = state["day"]
         state["phase"] = "night"
         state["queue"] = self._night_queue(state)
 
@@ -326,23 +339,43 @@ class WerewolfGame(Game):
             return "(empty so far)"
         return "\n".join(f"  {i}. {n}" for i, n in enumerate(notes, 1))
 
-    def _public(self, state):
-        return ("\n".join(state["transcript"])
-                or "(nothing has happened yet — it is the first night)")
+    def _name_color(self, state, player):
+        return NAME_PALETTE[state["players"].index(player) % len(NAME_PALETTE)]
+
+    def _colorize(self, text, state):
+        """Tag each player's name in its own bright color (human view only).
+        Names are unique hyphenated tokens; longest-first avoids substring
+        collisions. RESET/DIM brackets restore the ambient dimming around it."""
+        for p in sorted(state["players"], key=len, reverse=True):
+            c = self._name_color(state, p)
+            text = text.replace(p, f"{RESET}{c}{BOLD}{p}{RESET}{DIM}")
+        return text
+
+    def _public(self, state, color=False):
+        if not state["transcript"]:
+            return "(nothing has happened yet — it is the first night)"
+        # A blank line between events, and colored names, for human readers.
+        if color:
+            events = (self._colorize(e, state) for e in state["transcript"])
+            return "\n\n".join(events)
+        return "\n".join(state["transcript"])
 
     def observation(self, state, player):
         kind = self._kind(state)
+        human = player in (state.get("_humans") or [])
         living_others = [p for p in state["alive"] if p != player]
         parts = [
             self._identity(state, player),
             f"\nPlayers:\n{self._roster(state)}",
-            f"\nPUBLIC EVENTS so far:\n{self._public(state)}",
+            f"\nPUBLIC EVENTS so far:\n{self._public(state, color=human)}",
             f"\nYOUR PRIVATE NOTEBOOK (only you ever see this):\n"
             f"{self._notebook(state, player)}",
         ]
         if kind == "wolf_msg":
             chat = ("\n".join(f"  {w}: {m}" for w, m in state["wolf_chat"])
                     or "  (no messages yet tonight)")
+            if human:
+                chat = self._colorize(chat, state)
             parts.append(f"\nNIGHT {state['night']} — private werewolf chat "
                          f"so far:\n{chat}\n\nSend a short private message to "
                          "your fellow werewolf (coordinate your kill). Reply as "
@@ -350,6 +383,8 @@ class WerewolfGame(Game):
         elif kind == "wolf_kill":
             chat = ("\n".join(f"  {w}: {m}" for w, m in state["wolf_chat"])
                     or "  (none)")
+            if human:
+                chat = self._colorize(chat, state)
             targets = [p for p in living_others
                        if state["role_of"][p] != "wolf"]
             parts.append(f"\nNIGHT {state['night']} — werewolf chat tonight:\n"
