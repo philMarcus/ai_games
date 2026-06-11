@@ -37,10 +37,14 @@ def get_game(name):
     if name in ("werewolf", "mafia"):
         from games.werewolf import WerewolfGame
         return WerewolfGame
+    if name in ("scrabble", "scrab"):
+        from games.scrabble import ScrabbleGame
+        return ScrabbleGame
     return None
 
 
-GAME_NAMES = ["chess", "ipd", "20q", "codenames", "go", "telephone", "werewolf"]
+GAME_NAMES = ["chess", "ipd", "20q", "codenames", "go", "telephone", "werewolf",
+              "scrabble"]
 
 
 def build_parser(game_cls):
