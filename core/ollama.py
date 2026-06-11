@@ -23,23 +23,44 @@ def _is_wsl():
 
 
 def detect_ollama_url():
-    """Find Ollama: OLLAMA_URL env var, then the WSL2 host IP (WSL only),
-    else localhost."""
-    env_url = os.environ.get("OLLAMA_URL", "").strip()
-    if env_url:
-        return env_url
+    """Find Ollama by PROBING candidates — guessing from network config breaks
+    whenever WSL switches between NAT and mirrored networking (a stale
+    OLLAMA_HOST, or a "gateway" that is really the LAN router, would win)."""
+    cands = candidate_urls()
+    for u in cands:
+        try:
+            requests.get(f"{u}/api/tags", timeout=2).raise_for_status()
+            return u
+        except Exception:
+            continue
+    return cands[0]  # nothing answered; list_installed() will explain clearly
 
+
+def candidate_urls():
+    """Possible Ollama endpoints, most-specific first: OLLAMA_URL/OLLAMA_HOST
+    env vars, localhost (correct under WSL mirrored networking), then the WSL2
+    gateway IP (correct under WSL NAT networking)."""
+    urls = []
+    for var in ("OLLAMA_URL", "OLLAMA_HOST"):
+        v = os.environ.get(var, "").strip().rstrip("/")
+        if v:
+            if not v.startswith("http"):
+                v = f"http://{v}"
+            if not re.search(r":\d+$", v):
+                v = f"{v}:11434"
+            urls.append(v)
+    urls.append("http://localhost:11434")
     if _is_wsl():
         try:
             import subprocess
-            out = subprocess.check_output(["ip", "route", "show", "default"], text=True)
+            out = subprocess.check_output(["ip", "route", "show", "default"],
+                                          text=True)
             m = re.search(r"via\s+(\d+\.\d+\.\d+\.\d+)", out)
             if m:
-                return f"http://{m.group(1)}:11434"
+                urls.append(f"http://{m.group(1)}:11434")
         except Exception:
             pass
-
-    return "http://localhost:11434"
+    return list(dict.fromkeys(urls))
 
 
 def resolve_model(requested, explicit, installed):
