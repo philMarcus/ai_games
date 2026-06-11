@@ -34,10 +34,13 @@ def get_game(name):
     if name in ("telephone",):
         from games.telephone import TelephoneGame
         return TelephoneGame
+    if name in ("werewolf", "mafia"):
+        from games.werewolf import WerewolfGame
+        return WerewolfGame
     return None
 
 
-GAME_NAMES = ["chess", "ipd", "20q", "codenames", "go", "telephone"]
+GAME_NAMES = ["chess", "ipd", "20q", "codenames", "go", "telephone", "werewolf"]
 
 
 def build_parser(game_cls):
@@ -159,7 +162,14 @@ def main(argv=None):
         if args.models:
             comps = [make_adhoc(m.strip())
                      for m in args.models.split(",") if m.strip()]
-            return {c.label: c for c in comps}
+            field, seen = {}, {}
+            for c in comps:
+                seen[c.label] = seen.get(c.label, 0) + 1
+                if seen[c.label] > 1:   # duplicates get distinct labels
+                    c = Competitor(f"{c.label}#{seen[c.label]}", c.model,
+                                   c.think, c.effort, c.temperature)
+                field[c.label] = c
+            return field
         names = [n for n, _ in installed]
         if not args.include_cloud:
             names = [m for m in names if not m.endswith(":cloud")]

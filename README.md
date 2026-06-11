@@ -34,6 +34,14 @@ plus a small Game interface that each game plugs into. See `PLAN.md` for the des
   in rotation must repeat the previous output EXACTLY for `--steps` turns
   (default 50). Any change is a mutation that propagates down the chain.
   Standings rank models by transcription fidelity.
+- **werewolf** — social deduction for the whole stable (5+ players; duplicates
+  allowed): secret wolves confer and kill by night, the seer inspects, the
+  village debates and casts sealed votes by day. Each player keeps an
+  append-only **private notebook** fed back every turn — the record contains
+  each model's secret diary next to its public lies. A player who can't act is
+  eliminated, not game-ending. With no human playing you spectate everything
+  (roles, night actions, notebooks); the moment a human joins, night actions
+  are anonymized and nothing spoils.
 
 Planned: who's-on-first.
 
@@ -74,6 +82,10 @@ py play.py telephone --models gemma4:26b,qwen3:14b,phi4 --length paragraph --ste
 # play a model yourself: "human" is a valid competitor anywhere a model name goes
 py play.py chess --white human --black gemma4:26b --no-comment
 py play.py codenames --spymaster gemma4:26b --guesser human
+
+# werewolf with seven models (or join in yourself — no spoilers shown)
+py play.py werewolf --no-think
+py play.py werewolf --models gemma4:26b,qwen3:14b,phi4,gemma3:12b,mistral-small3.2:24b,gpt-oss:20b,human
 ```
 
 ## Playing as a human
@@ -140,6 +152,8 @@ Codenames extras: `--turns N` (clue turns to find all 9 targets, default 9).
 Go extras: `--komi F` (White's compensation, default 7.0).
 Telephone extras: `--length phrase|sentence|paragraph`, `--steps N` (default 50),
 `--stop-on-mutation` (end at the first change instead).
+Werewolf extras: `--wolves N` (default 2 with 7+ players, else 1), `--talk N`
+(discussion rounds per day, default 2).
 
 ## Tests
 

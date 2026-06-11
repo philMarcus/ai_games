@@ -138,16 +138,18 @@ def human_turn(game, state, role, comp, schema, opts, events):
                        "elapsed": round(elapsed, 2)})
 
 
-def take_turn(client, game, state, role, comp, opts, events):
+def take_turn(client, game, state, role, comp, opts, events, quiet=False):
     """Run one role's turn. On success the action is applied to state.
     Returns ("ok", display, comment) or ("forfeit", kind) with kind
-    'illegal'|'time'. Appends attempt records to `events`."""
+    'illegal'|'time'. Appends attempt records to `events`. With quiet=True
+    nothing is printed (hidden-information turns while a human plays)."""
     schema = game.action_schema(state, role)
     if opts.get("no_comment"):
         schema = strip_comment_schema(schema)
     if comp.is_human:
         return human_turn(game, state, role, comp, schema, opts, events)
 
+    out = (lambda s: None) if quiet else sys.stdout.write
     system = game.system_prompt(role)
     if opts["move_time"]:
         system += (f"\nTIME CONTROL: you have at most {opts['move_time']} seconds to "
@@ -157,7 +159,7 @@ def take_turn(client, game, state, role, comp, opts, events):
 
     think_open = [False]
     on_think = None
-    if opts["show_think"] and comp.think:
+    if opts["show_think"] and comp.think and not quiet:
         def on_think(tok):
             if not think_open[0]:
                 sys.stdout.write(f"{DIM}  (thinking) ")
@@ -260,6 +262,9 @@ def play_game(client, game, assignment, opts, header=""):
     """Play one game. `assignment` maps role -> Competitor. Returns the outcome
     record (also written to a run dir unless opts['record'] is False)."""
     state = game.initial_state()
+    if isinstance(state, dict):
+        # Games use this to redact spectator-only info when a human is playing.
+        state["_humans"] = [r for r, c in assignment.items() if c.is_human]
     events = []
     custom_colors = getattr(game, "role_colors", {})
     role_color = {r: custom_colors.get(r, ROLE_COLORS[i % len(ROLE_COLORS)])
@@ -284,32 +289,49 @@ def play_game(client, game, assignment, opts, header=""):
     while not game.is_over(state) and turns < max_rounds:
         role = game.current_role(state)
         comp = assignment[role]
-        turn_title = (comp.label if role == comp.label
-                      else f"{role.capitalize()} — {comp.label}")
-        print(f"\n{BOLD}{role_color[role]}{turn_title}{RESET}")
+        quiet = bool(getattr(game, "quiet_turn", lambda s, r: False)(state, role))
+        if quiet:
+            print(f"\n{DIM}— someone acts unseen… —{RESET}")
+        else:
+            turn_title = (comp.label if role == comp.label
+                          else f"{role.capitalize()} — {comp.label}")
+            print(f"\n{BOLD}{role_color[role]}{turn_title}{RESET}")
 
         t0 = time.time()
-        got = take_turn(client, game, state, role, comp, opts, events)
+        got = take_turn(client, game, state, role, comp, opts, events, quiet=quiet)
         elapsed = time.time() - t0
 
         if got[0] == "forfeit":
             kind = got[1]
-            forfeit = (role, kind)
             reason = ("ran out of time" if kind == "time"
                       else "failed to produce a legal action")
+            # Multiplayer games can absorb a forfeit as an elimination and
+            # keep playing; two-player games end here.
+            eliminate = getattr(game, "eliminate", None)
+            if eliminate is not None and eliminate(state, role, kind):
+                print(f"{RED}{BOLD}  ✗ {comp.label} {reason} ({elapsed:.0f}s) "
+                      f"— eliminated from the game.{RESET}")
+                events.append({"type": "eliminated", "role": role,
+                               "label": comp.label, "kind": kind})
+                board = game.render(state)
+                if board:
+                    print(board)
+                continue
+            forfeit = (role, kind)
             print(f"{RED}{BOLD}  ✗ {role.capitalize()} ({comp.label}) {reason} "
                   f"({elapsed:.0f}s) — forfeits.{RESET}")
             break
 
         _, display, comment = got
         turns += 1
-        clock = (f"{elapsed:.1f}s/{opts['move_time']}s" if opts["move_time"]
-                 else f"{elapsed:.1f}s")
-        over = opts["move_time"] and elapsed > opts["move_time"]
-        print(f"  {BOLD}{display}{RESET}   {RED if over else DIM}({clock}){RESET}")
-        if comment:
-            ccol = WHITE if role == game.roles[0] else DIM
-            print(f"  {ccol}“{comment}”{RESET}")
+        if not quiet:
+            clock = (f"{elapsed:.1f}s/{opts['move_time']}s" if opts["move_time"]
+                     else f"{elapsed:.1f}s")
+            over = opts["move_time"] and elapsed > opts["move_time"]
+            print(f"  {BOLD}{display}{RESET}   {RED if over else DIM}({clock}){RESET}")
+            if comment:
+                ccol = WHITE if role == game.roles[0] else DIM
+                print(f"  {ccol}“{comment}”{RESET}")
         board = game.render(state)
         if board:
             print(board)

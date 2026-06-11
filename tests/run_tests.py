@@ -677,6 +677,142 @@ def test_human_eof_forfeits():
     assert got[:2] == ("forfeit", "illegal")
 
 
+# ── Werewolf ──────────────────────────────────────────────────────────────
+
+WW_PLAYERS = ["alpha", "beta", "gamma", "delta", "echo"]
+
+
+def ww_game(talk=1, wolves=1, seed=5):
+    import random
+    from games.werewolf import WerewolfGame
+    g = WerewolfGame()
+    g.n_wolves = wolves
+    g.talk_rounds = talk
+    g.rng = random.Random(seed)
+    g.set_chain(WW_PLAYERS)
+    return g
+
+
+def ww_who(state):
+    wolf = [p for p, r in state["role_of"].items() if r == "wolf"][0]
+    seer = [p for p, r in state["role_of"].items() if r == "seer"][0]
+    return wolf, seer
+
+
+def ww_responder(plan):
+    """plan maps kind -> callable(player, state-free prompt text) or value."""
+    def respond(model, messages):
+        user = messages[1]["content"]
+        if "Send a short private message" in user:
+            return json.dumps({"message": "let us strike", "notes": "wolf chat"})
+        if "Choose tonight's victim" in user:
+            return json.dumps({"target": plan["kill"](user), "notes": "kill note"})
+        if "secretly inspect" in user:
+            return json.dumps({"target": plan["see"](user), "notes": "saw them"})
+        if "Speak to the village" in user:
+            return json.dumps({"speech": "I am but a humble villager.",
+                               "notes": "talked"})
+        if "cast your SEALED vote" in user:
+            return json.dumps({"target": plan["vote"](user), "notes": "voted"})
+        raise AssertionError("unrecognized werewolf prompt")
+    return respond
+
+
+def test_werewolf_setup_and_village_win():
+    import random
+    g = ww_game()
+    probe = g.initial_state()
+    wolf, seer = ww_who(probe)
+    assert len([p for p, r in probe["role_of"].items() if r == "villager"]) == 3
+    g.rng = random.Random(5)   # the real game must deal the same roles as the probe
+
+    def first_living_nonwolf(user):
+        # wolf kills the first valid target listed
+        line = user.split("Valid targets: ")[1]
+        return line.split(".")[0].split(",")[0].strip()
+
+    def vote_wolf(user):
+        if "You are a WEREWOLF" in user:        # the wolf can't vote for itself
+            return first_living_nonwolf(user)
+        return wolf
+
+    client = MockClient(responder=ww_responder(
+        {"kill": first_living_nonwolf, "see": first_living_nonwolf,
+         "vote": vote_wolf}))
+    tmp = tempfile.mkdtemp()
+    comps = {l: mk(l) for l in WW_PLAYERS}
+    outcome = engine.play_game(client, g, comps, opts(tmp))
+    # everyone votes for the wolf on day 1 → village wins
+    assert outcome["extra"]["team"] == "village"
+    assert outcome["extra"]["won"][wolf] is False
+    assert all(outcome["extra"]["won"][p] for p in WW_PLAYERS if p != wolf)
+    story = open(os.path.join(outcome["run_dir"], "story.txt"),
+                 encoding="utf-8").read()
+    assert "lynch" in story and "private notebooks" in story.lower()
+    shutil.rmtree(tmp)
+
+
+def test_werewolf_notebook_accumulates():
+    g = ww_game()
+    state = g.initial_state()
+    wolf, seer = ww_who(state)
+    state["_humans"] = []
+    # play the wolf's kill (queue starts with it in a 1-wolf game)
+    assert g.current_role(state) == wolf and g._kind(state) == "wolf_kill"
+    pool = [p for p in state["alive"] if p != wolf]
+    g.apply(state, wolf, {"target": pool[0], "notes": "first entry"})
+    assert state["notebooks"][wolf] == ["(night 1) first entry"]
+    # the seer acts; then it's day — wolf's next observation shows its notebook
+    g.apply(state, seer, {"target": wolf, "notes": "checked"})
+    obs = g.observation(state, wolf)
+    assert "first entry" in obs
+    # seer's private log is in its own observation, not the wolf's
+    assert "is a WEREWOLF" in g.observation(state, seer)
+    assert "is a WEREWOLF" not in obs
+
+
+def test_werewolf_wolves_win_and_elimination():
+    g = ww_game()
+    state = g.initial_state()
+    state["_humans"] = []
+    wolf, seer = ww_who(state)
+    # night 1: wolf kills a plain villager; seer inspects the wolf
+    plain = [p for p in state["alive"]
+             if state["role_of"][p] == "villager"]
+    g.apply(state, wolf, {"target": plain[0], "notes": ""})
+    g.apply(state, seer, {"target": wolf, "notes": ""})
+    # day phase now; eliminate (forfeit) non-wolves until parity
+    alive_nonwolves = [p for p in state["alive"] if p != wolf]
+    assert g.eliminate(state, alive_nonwolves[0], "illegal") is True
+    assert g.eliminate(state, alive_nonwolves[1], "illegal") is True
+    # 1 wolf vs 1 villager left → wolves reach parity
+    assert state["over"] and state["team"] == "wolves"
+    res = g.result(state)
+    assert res["extra"]["won"][wolf] is True
+
+
+def test_werewolf_redaction():
+    g = ww_game()
+    state = g.initial_state()
+    wolf, seer = ww_who(state)
+    # spectator mode: render shows roles, night turns aren't quiet
+    state["_humans"] = []
+    assert f"({state['role_of'][wolf]})" in strip_ansi(g.render(state))
+    assert g.quiet_turn(state, wolf) is False
+    # human present: roles hidden, others' night turns quiet, kill display vague
+    state["_humans"] = ["echo"]
+    assert "(wolf)" not in strip_ansi(g.render(state))
+    assert g.quiet_turn(state, wolf) is True
+    pool = [p for p in state["alive"] if p != wolf and state["role_of"][p] != "wolf"]
+    verdict, display = g.apply(state, wolf, {"target": pool[0], "notes": "x"})
+    assert verdict == "ok" and pool[0] not in display
+    assert g.comment_of({}) == ""        # notes never leak with a human present
+
+
+def strip_ansi(s):
+    return re.sub(r"\x1b\[[0-9;]*m", "", s)
+
+
 # ── competitor / roster ───────────────────────────────────────────────────
 
 def test_competitor_roundtrip():
