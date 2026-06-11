@@ -303,11 +303,14 @@ class WerewolfGame(Game):
     def _identity(self, state, player):
         me = state["role_of"][player]
         if me == "wolf":
-            others = [w for w in self._wolves(state, alive_only=False)
+            others = [w + ("" if w in state["alive"] else " (DEAD)")
+                      for w in self._wolves(state, alive_only=False)
                       if w != player]
             mates = ", ".join(others) if others else "nobody (you are alone)"
             return (f"You are {player}. You are a WEREWOLF. Your fellow "
-                    f"werewolf: {mates}. The village must never find out.")
+                    f"werewolf: {mates}. You are a TEAM: you win or lose "
+                    "together, so never vote to lynch a fellow werewolf — but "
+                    "the village must never find out who you are.")
         if me == "seer":
             log = ("; ".join(f"night {n}: {t} is "
                              + ("a WEREWOLF" if iw else "NOT a werewolf")
