@@ -83,6 +83,7 @@ class WerewolfGame(Game):
     name = "werewolf"
     roles = ()                  # field game: players come from --models
     max_rounds_default = 2000   # is_over governs
+    comment_label = "notebook"  # notes print labeled, on their own line
 
     def __init__(self):
         self.n_wolves = None    # default scales with player count
@@ -182,9 +183,10 @@ class WerewolfGame(Game):
         return q
 
     def _day_queue(self, state):
-        living = state["alive"]
-        start = state["day"] % max(1, len(living))
-        order = living[start:] + living[:start]
+        # Fresh random speaking order every day — nobody (wolf or villager)
+        # systematically anchors or closes the discussion.
+        order = list(state["alive"])
+        self.rng.shuffle(order)
         q = []
         for _ in range(self.talk_rounds):
             q += [(p, "speak") for p in order]
@@ -470,21 +472,36 @@ class WerewolfGame(Game):
         if state["reveal"]:
             out.append(f"\n  {BOLD}{YELLOW}{state['reveal']}{RESET}")
             state["reveal"] = None
+        if state["over"]:
+            return "\n".join(out)
         spectate = not (state.get("_humans") or [])
-        bits = []
-        for p in state["players"]:
-            role = state["role_of"][p]
-            if p in state["alive"]:
-                tag = f"({role})" if spectate else ""
-                color = (RED if role == "wolf" and spectate else
-                         CYBER if role == "seer" and spectate else "")
-                bits.append(f"{color}{p}{tag}{RESET}")
-            else:
-                bits.append(f"{DIM}✝{p}({role}){RESET}")
+
+        def name(p):
+            mark = "" if p in state["alive"] else f"{DIM}✗ "
+            end = "" if p in state["alive"] else f"{RESET}"
+            return f"{mark}{p}{end}"
+
         phase = (f"night {state['night']}" if state["phase"] == "night"
                  else f"day {state['day']}")
-        if not state["over"]:
-            out.append(f"  {DIM}[{phase}]{RESET} " + "  ".join(bits))
+        if spectate:
+            groups = []
+            for kind, color in (("wolf", RED), ("seer", CYBER),
+                                ("villager", "")):
+                members = [name(p) for p in state["players"]
+                           if state["role_of"][p] == kind]
+                label = {"wolf": "WOLVES", "seer": "SEER",
+                         "villager": "VILLAGERS"}[kind]
+                groups.append(f"{color}{label}:{RESET} " + ", ".join(members))
+            out.append(f"\n  {DIM}[{phase}]{RESET}  " + "   ".join(groups))
+        else:
+            alive = ", ".join(p for p in state["alive"])
+            dead = ", ".join(f"✗ {p} (was {state['role_of'][p]})"
+                             for p in state["players"]
+                             if p not in state["alive"])
+            line = f"\n  {DIM}[{phase}]{RESET}  alive: {alive}"
+            if dead:
+                line += f"   {DIM}dead: {dead}{RESET}"
+            out.append(line)
         return "\n".join(out)
 
     def result(self, state, forfeit=None, capped=False):

@@ -795,13 +795,15 @@ def test_werewolf_redaction():
     g = ww_game()
     state = g.initial_state()
     wolf, seer = ww_who(state)
-    # spectator mode: render shows roles, night turns aren't quiet
+    # spectator mode: render groups roles, night turns aren't quiet
     state["_humans"] = []
-    assert f"({state['role_of'][wolf]})" in strip_ansi(g.render(state))
+    spec = strip_ansi(g.render(state))
+    assert "WOLVES:" in spec and wolf in spec.split("SEER:")[0]
     assert g.quiet_turn(state, wolf) is False
     # human present: roles hidden, others' night turns quiet, kill display vague
     state["_humans"] = ["echo"]
-    assert "(wolf)" not in strip_ansi(g.render(state))
+    hidden = strip_ansi(g.render(state))
+    assert "WOLVES:" not in hidden and "alive:" in hidden
     assert g.quiet_turn(state, wolf) is True
     pool = [p for p in state["alive"] if p != wolf and state["role_of"][p] != "wolf"]
     verdict, display = g.apply(state, wolf, {"target": pool[0], "notes": "x"})

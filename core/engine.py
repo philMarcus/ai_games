@@ -205,16 +205,18 @@ def take_turn(client, game, state, role, comp, opts, events, quiet=False):
             snippet = " ".join(raw.split())[:160]
             if think_chars and not raw.strip():
                 kind = "think_exhausted"
-                sys.stdout.write(f"{RED}  ! used its entire token budget thinking "
-                                 f"({think_chars} chars) and never answered{tail}{RESET}\n")
+                ignored = ("" if comp.think
+                           else " — NOTE: this model ignores think=off")
+                out(f"{RED}  ! used its entire token budget thinking "
+                    f"({think_chars} chars) and never answered{ignored}{tail}{RESET}\n")
                 feedback = ("You spent your whole response thinking and never output an "
                             "action. Think briefly, then immediately output ONLY the "
                             "required JSON.")
             else:
                 kind = "unparseable"
-                sys.stdout.write(f"{RED}  ! no parseable action in reply (bad JSON)"
-                                 f"{tail}{RESET}\n")
-                sys.stdout.write(f"{DIM}    got: {snippet or '(empty response)'}{RESET}\n")
+                out(f"{RED}  ! no parseable action in reply (bad JSON)"
+                    f"{tail}{RESET}\n")
+                out(f"{DIM}    got: {snippet or '(empty response)'}{RESET}\n")
                 feedback = ("Your previous reply was not the valid JSON object that was "
                             "asked for. Reply with ONLY that JSON.")
             events.append({"type": "bad_json", "kind": kind, "role": role,
@@ -240,10 +242,10 @@ def take_turn(client, game, state, role, comp, opts, events, quiet=False):
         feedback = (f"Earlier on THIS SAME turn you already tried {already}; each was "
                     f"rejected as illegal: {info}. Do not propose any of those again; "
                     "choose a different, legal action.")
-        sys.stdout.write(f"{RED}  ! illegal: {name} ({info}){tail}{RESET}\n")
+        out(f"{RED}  ! illegal: {name} ({info}){tail}{RESET}\n")
         comment = "" if opts.get("no_comment") else game.comment_of(action)
         if comment:
-            sys.stdout.write(f"{DIM}    “{comment}”{RESET}\n")
+            out(f"{DIM}    “{comment}”{RESET}\n")
         events.append({"type": "illegal", "role": role, "label": comp.label,
                        "action": action, "reason": info,
                        "elapsed": round(elapsed, 2)})
@@ -330,8 +332,12 @@ def play_game(client, game, assignment, opts, header=""):
             over = opts["move_time"] and elapsed > opts["move_time"]
             print(f"  {BOLD}{display}{RESET}   {RED if over else DIM}({clock}){RESET}")
             if comment:
-                ccol = WHITE if role == game.roles[0] else DIM
-                print(f"  {ccol}“{comment}”{RESET}")
+                label = getattr(game, "comment_label", None)
+                if label:
+                    print(f"\n  {DIM}[{label}] {comment}{RESET}")
+                else:
+                    ccol = WHITE if role == game.roles[0] else DIM
+                    print(f"  {ccol}“{comment}”{RESET}")
         board = game.render(state)
         if board:
             print(board)
