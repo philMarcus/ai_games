@@ -607,7 +607,8 @@ def test_telephone_stop_on_mutation():
 def test_truncation_feedback():
     game = ChessGame()
     state = game.initial_state()
-    cut = '{"move": "e4", "comment": "a manifesto that never en'
+    # A substantial reply cut off mid-JSON -> genuine output truncation.
+    cut = '{"move": "e4", "comment": "' + "a manifesto that never ends " * 10
     client = MockClient(script=[
         {"content": cut, "done_reason": "length"},     # cut off mid-JSON
         json.dumps({"move": "e4", "comment": "brief"}),
@@ -621,6 +622,26 @@ def test_truncation_feedback():
     retry_user = client.calls[1]["messages"][1]["content"]
     assert "CUT OFF" in retry_user and "briefly" in retry_user
     assert "not the valid JSON" not in retry_user    # no misleading message
+
+
+def test_context_full_feedback():
+    game = ChessGame()
+    state = game.initial_state()
+    # Stopped on "length" having generated almost nothing -> context window full,
+    # NOT a too-long reply. Must not be (mis)coached to "be briefer".
+    client = MockClient(script=[
+        {"content": "{", "done_reason": "length"},
+        json.dumps({"move": "e4", "comment": "brief"}),
+    ])
+    events = []
+    tmp = tempfile.mkdtemp()
+    got = engine.take_turn(client, game, state, "white", mk(), opts(tmp), events)
+    shutil.rmtree(tmp)
+    assert got[0] == "ok"
+    assert events[0]["type"] == "bad_json" and events[0]["kind"] == "context_full"
+    retry_user = client.calls[1]["messages"][1]["content"]
+    assert "context window" in retry_user
+    assert "far too long" not in retry_user          # no contradictory coaching
 
 
 # ── human player & --no-comment ───────────────────────────────────────────
@@ -778,18 +799,18 @@ def test_werewolf_notebook_accumulates():
     state = g.initial_state()
     wolf, seer = ww_who(state)
     state["_humans"] = []
-    # play the wolf's kill (queue starts with it in a 1-wolf game)
-    assert g.current_role(state) == wolf and g._kind(state) == "wolf_kill"
-    pool = [p for p in state["alive"] if p != wolf]
-    g.apply(state, wolf, {"target": pool[0], "notes": "first entry"})
-    assert state["notebooks"][wolf] == ["(night 1) first entry"]
-    # the seer acts; then it's day — wolf's next observation shows its notebook
-    g.apply(state, seer, {"target": wolf, "notes": "checked"})
-    obs = g.observation(state, wolf)
-    assert "first entry" in obs
-    # seer's private log is in its own observation, not the wolf's
-    assert "is a WEREWOLF" in g.observation(state, seer)
-    assert "is a WEREWOLF" not in obs
+    # night 0 is seer-only: the seer acts first, the wolves don't act yet
+    assert g.current_role(state) == seer and g._kind(state) == "see"
+    g.apply(state, seer, {"target": wolf, "notes": "first entry"})
+    assert state["notebooks"][seer] == ["(night 0) first entry"]
+    # it is day 1 now; the seer's note + inspection show in its own observation
+    obs_seer = g.observation(state, seer)
+    assert "first entry" in obs_seer
+    assert "is a WEREWOLF" in obs_seer
+    # the wolf sees neither the seer's private notes nor its inspection log
+    obs_wolf = g.observation(state, wolf)
+    assert "first entry" not in obs_wolf
+    assert "is a WEREWOLF" not in obs_wolf
 
 
 def test_werewolf_wolves_win_and_elimination():
@@ -797,16 +818,15 @@ def test_werewolf_wolves_win_and_elimination():
     state = g.initial_state()
     state["_humans"] = []
     wolf, seer = ww_who(state)
-    # night 1: wolf kills a plain villager; seer inspects the wolf
-    plain = [p for p in state["alive"]
-             if state["role_of"][p] == "villager"]
-    g.apply(state, wolf, {"target": plain[0], "notes": ""})
+    # night 0 is seer-only — no opening kill; the seer inspects the wolf
+    assert g._kind(state) == "see"
     g.apply(state, seer, {"target": wolf, "notes": ""})
-    # day phase now; eliminate (forfeit) non-wolves until parity
-    alive_nonwolves = [p for p in state["alive"] if p != wolf]
-    assert g.eliminate(state, alive_nonwolves[0], "illegal") is True
-    assert g.eliminate(state, alive_nonwolves[1], "illegal") is True
-    # 1 wolf vs 1 villager left → wolves reach parity
+    # day 1: eliminate (forfeit) non-wolves until the wolf reaches parity
+    for p in [x for x in state["alive"] if x != wolf]:
+        if state["over"]:
+            break
+        assert g.eliminate(state, p, "illegal") is True
+    # 1 wolf vs 1 survivor left → wolves reach parity
     assert state["over"] and state["team"] == "wolves"
     res = g.result(state)
     assert res["extra"]["won"][wolf] is True

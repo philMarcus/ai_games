@@ -111,8 +111,8 @@ class OllamaClient:
         return [(m["name"], m.get("size", 0)) for m in models]
 
     def chat(self, model, messages, *, schema=None, temperature=0.7,
-             num_predict=2048, think=True, think_effort=None, deadline=None,
-             on_think=None):
+             num_predict=2048, num_ctx=None, think=True, think_effort=None,
+             deadline=None, on_think=None):
         """One structured-output chat call, streamed.
 
         Returns (content_str, thinking_char_count, timed_out).
@@ -124,11 +124,17 @@ class OllamaClient:
           passes (the caller treats that as losing on time).
         - `on_think(token)` is called for each streamed thinking token.
         """
+        options = {"temperature": temperature, "num_predict": num_predict}
+        if num_ctx:
+            # Per-request only — does NOT alter the model's saved context size
+            # or affect other callers. The window must hold the whole prompt
+            # PLUS num_predict, or generation stops at "length" with no answer.
+            options["num_ctx"] = num_ctx
         payload = {
             "model": model,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": temperature, "num_predict": num_predict},
+            "options": options,
         }
         if schema is not None:
             payload["format"] = schema

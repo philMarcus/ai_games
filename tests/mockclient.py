@@ -19,8 +19,8 @@ class MockClient:
         return [("mock:latest", 1)]
 
     def chat(self, model, messages, *, schema=None, temperature=0.7,
-             num_predict=2048, think=True, think_effort=None, deadline=None,
-             on_think=None):
+             num_predict=2048, num_ctx=None, think=True, think_effort=None,
+             deadline=None, on_think=None):
         self.calls.append({"model": model, "messages": messages, "schema": schema})
         if self.responder is not None:
             item = self.responder(model, messages)

@@ -187,7 +187,8 @@ def take_turn(client, game, state, role, comp, opts, events, quiet=False):
             [{"role": "system", "content": system},
              {"role": "user", "content": obs}],
             schema=schema, temperature=comp.temperature,
-            num_predict=opts["num_predict"], think=comp.think,
+            num_predict=opts["num_predict"], num_ctx=opts.get("num_ctx"),
+            think=comp.think,
             think_effort=comp.effort, deadline=deadline, on_think=on_think)
         elapsed = time.time() - t0
         if think_open[0]:
@@ -212,6 +213,17 @@ def take_turn(client, game, state, role, comp, opts, events, quiet=False):
                 feedback = ("You spent your whole response thinking and never output an "
                             "action. Think briefly, then immediately output ONLY the "
                             "required JSON.")
+            elif done_reason == "length" and len(raw) + think_chars < 120:
+                # Stopped on "length" having generated almost nothing: the prompt
+                # itself filled the context window, leaving no room to answer.
+                # Being briefer cannot help (it already was), so don't coach that
+                # — raise --num-ctx instead.
+                kind = "context_full"
+                out(f"{RED}  ! the prompt filled the model's context window — no "
+                    f"room left to answer (got {len(raw)} chars){tail}{RESET}\n")
+                feedback = ("Your reply could not be generated: the conversation "
+                            "has filled the model's context window. Answer with "
+                            "the MINIMAL JSON and keep any notes to a few words.")
             elif done_reason == "length":
                 kind = "truncated"
                 out(f"{RED}  ! reply hit the token limit and was cut off "

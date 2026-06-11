@@ -79,6 +79,10 @@ def build_parser(game_cls):
                    help="Max tokens per reply, shared by thinking + answer "
                         f"(default {getattr(game_cls, 'num_predict_default', 2048)} "
                         "for this game)")
+    p.add_argument("--num-ctx", type=int, default=None,
+                   help="Ollama context window in tokens — must hold the whole "
+                        "prompt PLUS the reply, or generation stops with no "
+                        f"answer (default {getattr(game_cls, 'num_ctx_default', 16384)})")
     p.add_argument("--no-comment", dest="no_comment", action="store_true",
                    help="Drop the private-comment field entirely: models aren't asked "
                         "for one and humans aren't prompted")
@@ -137,6 +141,7 @@ def main(argv=None):
         "retries": args.retries,
         "num_predict": args.num_predict or getattr(game_cls,
                                                    "num_predict_default", 2048),
+        "num_ctx": args.num_ctx or getattr(game_cls, "num_ctx_default", 16384),
         "move_time": args.move_time, "delay": args.delay,
         "show_think": not args.hide_think, "no_comment": args.no_comment,
         "max_rounds": args.max_rounds or game_cls.max_rounds_default,
@@ -147,7 +152,8 @@ def main(argv=None):
     print(f"  Game: {game.name}    Ollama: {client.base_url}")
     clock = f"{args.move_time}s/move" if args.move_time else "none"
     print(f"  Retries: {args.retries}    Max rounds: {opts['max_rounds']}    "
-          f"Num-predict: {opts['num_predict']}    Clock: {clock}")
+          f"Num-predict: {opts['num_predict']}    Context: {opts['num_ctx']}    "
+          f"Clock: {clock}")
     if roster:
         print(f"  Roster: {args.roster}  ({len(roster)} competitors)")
     else:
