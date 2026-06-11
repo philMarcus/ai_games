@@ -71,8 +71,10 @@ def build_parser(game_cls):
                    help="Reasoning effort for models that support it (e.g. gpt-oss)")
     p.add_argument("--hide-think", action="store_true",
                    help="Don't stream thinking to the terminal")
-    p.add_argument("--num-predict", type=int, default=2048,
-                   help="Max tokens per reply, shared by thinking + answer (default 2048)")
+    p.add_argument("--num-predict", type=int, default=None,
+                   help="Max tokens per reply, shared by thinking + answer "
+                        f"(default {getattr(game_cls, 'num_predict_default', 2048)} "
+                        "for this game)")
     p.add_argument("--no-comment", dest="no_comment", action="store_true",
                    help="Drop the private-comment field entirely: models aren't asked "
                         "for one and humans aren't prompted")
@@ -128,7 +130,9 @@ def main(argv=None):
         return roster[name] if name in roster else make_adhoc(name)
 
     opts = {
-        "retries": args.retries, "num_predict": args.num_predict,
+        "retries": args.retries,
+        "num_predict": args.num_predict or getattr(game_cls,
+                                                   "num_predict_default", 2048),
         "move_time": args.move_time, "delay": args.delay,
         "show_think": not args.hide_think, "no_comment": args.no_comment,
         "max_rounds": args.max_rounds or game_cls.max_rounds_default,
@@ -139,7 +143,7 @@ def main(argv=None):
     print(f"  Game: {game.name}    Ollama: {client.base_url}")
     clock = f"{args.move_time}s/move" if args.move_time else "none"
     print(f"  Retries: {args.retries}    Max rounds: {opts['max_rounds']}    "
-          f"Num-predict: {args.num_predict}    Clock: {clock}")
+          f"Num-predict: {opts['num_predict']}    Clock: {clock}")
     if roster:
         print(f"  Roster: {args.roster}  ({len(roster)} competitors)")
     else:

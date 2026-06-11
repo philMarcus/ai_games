@@ -84,6 +84,7 @@ class WerewolfGame(Game):
     roles = ()                  # field game: players come from --models
     max_rounds_default = 2000   # is_over governs
     comment_label = "notebook"  # notes print labeled, on their own line
+    num_predict_default = 4096  # speeches + notebooks run long-form
 
     def __init__(self):
         self.n_wolves = None    # default scales with player count

@@ -147,7 +147,8 @@ class OllamaClient:
                                  stream=True, timeout=600)
         resp.raise_for_status()
 
-        content, think_chars, timed_out = [], 0, False
+        content, think_chars, timed_out, done_reason = [], 0, False, None
+        n_chunks = 0
         for line in resp.iter_lines():
             if deadline is not None and time.time() > deadline:
                 timed_out = True
@@ -160,11 +161,22 @@ class OllamaClient:
             th = msg.get("thinking")
             if th:
                 think_chars += len(th)
+                n_chunks += 1
                 if on_think:
                     on_think(th)
             tok = msg.get("content")
             if tok:
                 content.append(tok)
+                n_chunks += 1
             if chunk.get("done", False):
+                # "length" means num_predict cut generation off mid-reply —
+                # the caller uses this to coach "be briefer" instead of the
+                # misleading generic bad-JSON feedback. Ollama doesn't always
+                # report it (grammar-constrained runs can die at the cap with
+                # "stop"), so also infer it from the chunk count: one streamed
+                # chunk is one token.
+                done_reason = chunk.get("done_reason")
+                if done_reason != "length" and n_chunks >= num_predict:
+                    done_reason = "length"
                 break
-        return "".join(content), think_chars, timed_out
+        return "".join(content), think_chars, timed_out, done_reason

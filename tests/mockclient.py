@@ -33,4 +33,4 @@ class MockClient:
         if item.get("think_chars") and on_think:
             on_think("…")
         return (item.get("content", ""), item.get("think_chars", 0),
-                item.get("timeout", False))
+                item.get("timeout", False), item.get("done_reason", "stop"))

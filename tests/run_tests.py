@@ -602,6 +602,27 @@ def test_telephone_stop_on_mutation():
     shutil.rmtree(tmp)
 
 
+# ── truncation feedback ───────────────────────────────────────────────────
+
+def test_truncation_feedback():
+    game = ChessGame()
+    state = game.initial_state()
+    cut = '{"move": "e4", "comment": "a manifesto that never en'
+    client = MockClient(script=[
+        {"content": cut, "done_reason": "length"},     # cut off mid-JSON
+        json.dumps({"move": "e4", "comment": "brief"}),
+    ])
+    events = []
+    tmp = tempfile.mkdtemp()
+    got = engine.take_turn(client, game, state, "white", mk(), opts(tmp), events)
+    shutil.rmtree(tmp)
+    assert got[0] == "ok"
+    assert events[0]["type"] == "bad_json" and events[0]["kind"] == "truncated"
+    retry_user = client.calls[1]["messages"][1]["content"]
+    assert "CUT OFF" in retry_user and "briefly" in retry_user
+    assert "not the valid JSON" not in retry_user    # no misleading message
+
+
 # ── human player & --no-comment ───────────────────────────────────────────
 
 def test_no_comment_schema():

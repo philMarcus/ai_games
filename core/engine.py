@@ -182,7 +182,7 @@ def take_turn(client, game, state, role, comp, opts, events, quiet=False):
                    f"\n\n{obs}")
         think_open[0] = False
         t0 = time.time()
-        raw, think_chars, timed_out = client.chat(
+        raw, think_chars, timed_out, done_reason = client.chat(
             comp.model,
             [{"role": "system", "content": system},
              {"role": "user", "content": obs}],
@@ -212,6 +212,15 @@ def take_turn(client, game, state, role, comp, opts, events, quiet=False):
                 feedback = ("You spent your whole response thinking and never output an "
                             "action. Think briefly, then immediately output ONLY the "
                             "required JSON.")
+            elif done_reason == "length":
+                kind = "truncated"
+                out(f"{RED}  ! reply hit the token limit and was cut off "
+                    f"mid-JSON ({len(raw)} chars){tail}{RESET}\n")
+                feedback = ("Your previous reply exceeded the response length limit "
+                            "and was CUT OFF before the JSON finished — its content "
+                            "was fine but far too long. Reply again MUCH more "
+                            "briefly (a few sentences per field at most) so your "
+                            "answer completes.")
             else:
                 kind = "unparseable"
                 out(f"{RED}  ! no parseable action in reply (bad JSON)"

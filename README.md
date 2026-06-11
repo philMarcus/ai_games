@@ -140,7 +140,7 @@ records. Nothing is ephemeral.
 | `--retries N`         | Illegal-action retries before forfeit (default 2). |
 | `--max-rounds N`      | Cap on actions per game (chess default 200 plies; capped games adjudicated). |
 | `--move-time SECONDS` | Flat per-move clock; failing to act in time loses ("flag fall"). |
-| `--num-predict N`     | Max tokens per reply, shared by thinking + answer (default 2048). |
+| `--num-predict N`     | Max tokens per reply, shared by thinking + answer (default 2048; werewolf 4096). |
 | `--no-comment`        | Drop the private-comment field: models aren't asked, humans aren't prompted. |
 | `--hide-think`        | Don't stream thinking to the terminal. |
 | `--delay SECONDS`     | Pause between moves for watchability. |
